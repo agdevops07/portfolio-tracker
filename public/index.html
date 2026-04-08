@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --bg2: #141417;
+    --bg3: #1a1a1f;
+    --bg4: #222228;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.12);
+    --text: #f0f0f5;
+    --text2: #8a8a9a;
+    --text3: #55556a;
+    --green: #22c55e;
+    --red: #ef4444;
+    --accent: #6366f1;
+    --accent2: #818cf8;
+    --gold: #f59e0b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+
+  /* ── UPLOAD SCREEN ── */
+  #upload-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 2rem; }
+  .logo { font-size: 13px; font-weight: 600; letter-spacing: 0.15em; color: var(--text3); text-transform: uppercase; margin-bottom: 3rem; }
+  .hero-title { font-size: clamp(2rem, 5vw, 3.5rem); font-weight: 700; letter-spacing: -0.03em; text-align: center; line-height: 1.1; margin-bottom: 1rem; }
+  .hero-sub { color: var(--text2); font-size: 1rem; text-align: center; margin-bottom: 3rem; max-width: 400px; line-height: 1.6; }
+  .drop-zone { width: 100%; max-width: 520px; border: 1.5px dashed var(--border2); border-radius: 16px; padding: 3rem 2rem; display: flex; flex-direction: column; align-items: center; gap: 1rem; cursor: pointer; transition: all 0.2s; background: var(--bg2); }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent2); background: rgba(99,102,241,0.05); }
+  .drop-icon { width: 48px; height: 48px; background: var(--bg4); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .drop-title { font-size: 1rem; font-weight: 600; }
+  .drop-sub { font-size: 13px; color: var(--text2); text-align: center; }
+  .drop-zone input[type=file] { display: none; }
+  .or-divider { color: var(--text3); font-size: 13px; margin: 0.5rem 0; }
+  .sample-btn { background: transparent; border: 1px solid var(--border2); color: var(--text2); padding: 8px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+  .sample-btn:hover { border-color: var(--accent2); color: var(--accent2); }
+  .format-hint { margin-top: 2rem; max-width: 520px; }
+  .format-hint details summary { font-size: 13px; color: var(--text3); cursor: pointer; list-style: none; }
+  .format-hint details summary::-webkit-details-marker { display: none; }
+  .format-hint pre { margin-top: 0.75rem; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; font-size: 12px; color: var(--text2); font-family: 'SF Mono', monospace; overflow-x: auto; }
+
+  /* ── PREVIEW SCREEN ── */
+  #preview-screen { display: none; padding: 2rem; max-width: 900px; margin: 0 auto; }
+  .preview-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; flex-wrap: gap; gap: 1rem; }
+  .preview-title { font-size: 1.2rem; font-weight: 700; }
+  .btn-group { display: flex; gap: 0.5rem; }
+  .btn { padding: 8px 18px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; border: none; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: #5254cc; }
+  .btn-secondary { background: var(--bg4); color: var(--text2); border: 1px solid var(--border); }
+  .btn-secondary:hover { color: var(--text); border-color: var(--border2); }
+  .preview-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; margin-bottom: 1.5rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: var(--bg3); color: var(--text2); font-weight: 600; letter-spacing: 0.04em; font-size: 11px; text-transform: uppercase; padding: 10px 16px; text-align: left; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 16px; border-bottom: 1px solid var(--border); color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg3); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: rgba(34,197,94,0.12); color: var(--green); }
+  .badge-red { background: rgba(239,68,68,0.12); color: var(--red); }
+
+  /* ── DASHBOARD ── */
+  #dashboard-screen { display: none; padding: 1.5rem 2rem; max-width: 1300px; margin: 0 auto; }
+  .dash-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2rem; flex-wrap: wrap; gap: 1rem; }
+  .dash-logo { font-size: 13px; font-weight: 700; letter-spacing: 0.1em; color: var(--text3); text-transform: uppercase; }
+  .header-actions { display: flex; align-items: center; gap: 0.75rem; }
+  .cards-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem 1.5rem; }
+  .stat-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3); margin-bottom: 0.5rem; }
+  .stat-value { font-size: 1.6rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+  .stat-sub { font-size: 12px; color: var(--text2); margin-top: 0.4rem; }
+  .stat-up { color: var(--green); }
+  .stat-down { color: var(--red); }
+  .chart-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 1.5rem; margin-bottom: 1.5rem; }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem; flex-wrap: wrap; gap: 0.75rem; }
+  .chart-title { font-size: 15px; font-weight: 700; }
+  .time-filters { display: flex; gap: 4px; }
+  .tf-btn { background: transparent; border: 1px solid var(--border); color: var(--text2); padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .tf-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .tf-btn:hover:not(.active) { border-color: var(--border2); color: var(--text); }
+  .chart-wrap { position: relative; width: 100%; height: 320px; }
+  .holdings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+  .holding-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem; cursor: pointer; transition: all 0.15s; }
+  .holding-card:hover { border-color: var(--border2); transform: translateY(-1px); }
+  .hc-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 0.75rem; }
+  .hc-ticker { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+  .hc-name { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .hc-pnl { text-align: right; }
+  .hc-pnl-val { font-size: 14px; font-weight: 700; }
+  .hc-pnl-pct { font-size: 11px; }
+  .hc-bar-bg { background: var(--bg4); border-radius: 4px; height: 4px; margin-bottom: 0.75rem; }
+  .hc-bar { height: 4px; border-radius: 4px; }
+  .hc-bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; font-size: 11px; }
+  .hc-meta-label { color: var(--text3); margin-bottom: 1px; }
+  .hc-meta-val { font-weight: 600; font-size: 13px; }
+  .pie-wrap { position: relative; width: 100%; height: 280px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+  @media (max-width: 700px) { .two-col { grid-template-columns: 1fr; } .dash-header { flex-direction: column; align-items: flex-start; } }
+
+  /* ── DRILLDOWN ── */
+  #drilldown-screen { display: none; padding: 1.5rem 2rem; max-width: 1000px; margin: 0 auto; }
+  .back-btn { display: flex; align-items: center; gap: 0.5rem; background: none; border: none; color: var(--text2); font-size: 13px; cursor: pointer; padding: 0; margin-bottom: 1.5rem; }
+  .back-btn:hover { color: var(--text); }
+  .dd-title { font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 0.25rem; }
+  .dd-subtitle { color: var(--text2); font-size: 14px; margin-bottom: 1.5rem; }
+
+  /* ── LOADING / ERROR ── */
+  .loading { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem; gap: 1rem; }
+  .spinner { width: 32px; height: 32px; border: 2.5px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { color: var(--text2); font-size: 14px; }
+  .error-box { background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; padding: 1rem 1.25rem; color: #fca5a5; font-size: 13px; margin: 1rem 0; }
+  .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; background: var(--bg3); border: 1px solid var(--border2); border-radius: 10px; padding: 0.75rem 1.25rem; font-size: 13px; color: var(--text); opacity: 0; transform: translateY(8px); transition: all 0.3s; pointer-events: none; z-index: 999; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  /* ── MISC ── */
+  .section-title { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text3); margin-bottom: 1rem; }
+  .pnl-legend { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.75rem; font-size: 12px; color: var(--text2); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+  .export-btn { background: var(--bg4); border: 1px solid var(--border); color: var(--text2); padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.15s; }
+  .export-btn:hover { color: var(--text); border-color: var(--border2); }
+  .api-note { font-size: 11px; color: var(--text3); text-align: center; margin-top: 1rem; }
+</style>
+</head>
+<body>
+
+<!-- UPLOAD SCREEN -->
+<div id="upload-screen">
+  <div class="logo">📈 Portfolio Tracker</div>
+  <h1 class="hero-title">Your portfolio.<br>Crystal clear.</h1>
+  <p class="hero-sub">Upload your holdings CSV and get an instant visual breakdown of your portfolio performance.</p>
+  <div class="drop-zone" id="drop-zone">
+    <div class="drop-icon">📂</div>
+    <div class="drop-title">Drop your CSV here</div>
+    <div class="drop-sub">Supports ticker, quantity, average_buy_price,<br>buy_date columns</div>
+    <input type="file" id="file-input" accept=".csv">
+    <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">Browse File</button>
+    <button class="btn btn-primary" onclick="loadMyPortfolio()">Load my portfolio</button>
+    <div class="or-divider">or</div>
+    <button class="sample-btn" onclick="loadSampleData()">Load sample portfolio</button>
+  </div>
+  <div class="format-hint">
+    <details>
+      <summary>📋 CSV format reference</summary>
+      <pre>ticker,quantity,average_buy_price,buy_date,upstox_ticker
+RELIANCE.NS,10,2400.50,2023-06-01,ABC
+TCS.NS,5,3800.00,2023-04-15,
+INFY.NS,20,1500.00,2023-01-10,
+HDFCBANK.NS,8,1650.00,2023-09-20,
+AAPL,15,175.00,2023-03-01,
+RELIANCE.NS,5,2550.00,2023-11-01,</pre>
+    </details>
+  </div>
+  <p class="api-note">Prices fetched via Yahoo Finance proxy · Data cached in memory</p>
+</div>
+
+<!-- PREVIEW SCREEN -->
+<div id="preview-screen">
+  <div class="preview-header">
+    <div>
+      <div class="preview-title">📊 Preview Holdings</div>
+      <div style="font-size:13px;color:var(--text2);margin-top:4px;" id="preview-summary"></div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-secondary" onclick="goBack()">← Back</button>
+      <button class="btn btn-primary" onclick="loadDashboard()">Load Dashboard →</button>
+    </div>
+  </div>
+  <div id="preview-error"></div>
+  <div class="preview-table-wrap">
+    <table id="preview-table">
+      <thead><tr>
+        <th>Ticker</th>
+        <th>Upstox Ticker</th>
+        <th>Qty</th>
+        <th>Avg Buy Price</th>
+        <th>Invested</th>
+        <th>Buy Date</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <button class="btn btn-primary" style="width:100%" onclick="loadDashboard()">Load Dashboard →</button>
+</div>
+
+<!-- DASHBOARD SCREEN -->
+<div id="dashboard-screen">
+  <div class="dash-header">
+    <div class="dash-logo">📈 Portfolio Tracker</div>
+    <div class="header-actions">
+      <button class="export-btn" onclick="refreshDashboard()">🔄 Refresh</button>
+      <button class="export-btn" onclick="exportChart()">⬇ Export Chart</button>
+      <button class="btn btn-secondary" onclick="goBack()">← Upload New</button>
+    </div>
+  </div>
+  <div id="dash-loading" class="loading"><div class="spinner"></div><div class="loading-text" id="loading-msg">Fetching live prices…</div></div>
+  <div id="dash-content" style="display:none">
+    <div class="cards-grid" id="stat-cards"></div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">Portfolio Value Over Time</div>
+        <div class="time-filters">
+          <button class="tf-btn" onclick="setTimeFilter('1M',this)">1M</button>
+          <button class="tf-btn" onclick="setTimeFilter('3M',this)">3M</button>
+          <button class="tf-btn active" onclick="setTimeFilter('1Y',this)">1Y</button>
+          <button class="tf-btn" onclick="setTimeFilter('ALL',this)">ALL</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="portfolioChart" role="img" aria-label="Portfolio value over time line chart"></canvas></div>
+    </div>
+    <div class="two-col">
+      <div class="chart-card">
+        <div class="chart-title" style="margin-bottom:1rem">Allocation</div>
+        <div class="pie-wrap"><canvas id="pieChart" role="img" aria-label="Portfolio allocation pie chart"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title" style="margin-bottom:1rem">P&amp;L by Stock</div>
+        <div style="position:relative;width:100%;height:280px;"><canvas id="pnlChart" role="img" aria-label="P&L by stock bar chart"></canvas></div>
+      </div>
+    </div>
+    <div class="section-title">Holdings</div>
+    <div class="holdings-grid" id="holdings-grid"></div>
+  </div>
+</div>
+
+<!-- DRILLDOWN SCREEN -->
+<div id="drilldown-screen">
+  <button class="back-btn" onclick="showDashboard()">← Back to Dashboard</button>
+  <div class="dd-title" id="dd-ticker"></div>
+  <div class="dd-subtitle" id="dd-subtitle"></div>
+  <div class="cards-grid" id="dd-cards" style="margin-bottom:1.5rem"></div>
+  <div class="chart-card">
+    <div class="chart-title" style="margin-bottom:1rem">Price History</div>
+    <div class="chart-wrap"><canvas id="ddChart" role="img" aria-label="Stock price history chart"></canvas></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+let state = {
+  rawRows: [],
+  holdings: {},
+  priceCache: {},
+  historyCache: {},
+  portfolioTimeSeries: [],
+  fullTimeSeries: [],
+  currentFilter: '1Y',
+  portfolioChartInstance: null,
+  pieChartInstance: null,
+  pnlChartInstance: null,
+  ddChartInstance: null,
+  livePrices: {}
+};
+
+const SAMPLE_CSV = `ticker,quantity,average_buy_price,buy_date
+RELIANCE.NS,10,2400.50,2023-06-01
+TCS.NS,5,3800.00,2023-04-15
+INFY.NS,20,1500.00,2023-01-10
+HDFCBANK.NS,8,1650.00,2023-09-20
+WIPRO.NS,25,450.00,2023-07-15
+AAPL,15,175.00,2023-03-01
+RELIANCE.NS,5,2550.00,2023-11-01`;
+
+// ═══════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════
+const fmt = (n, dec=0) => '₹' + Number(n).toLocaleString('en-IN', {minimumFractionDigits:dec,maximumFractionDigits:dec});
+const fmtUSD = (n, dec=0) => '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:dec,maximumFractionDigits:dec});
+const fmtAny = (n, ticker, dec=0) => ticker && !ticker.endsWith('.NS') && !ticker.endsWith('.BO') ? fmtUSD(n,dec) : fmt(n,dec);
+const pct = n => (n>=0?'+':'')+n.toFixed(2)+'%';
+const colorPnl = v => v >= 0 ? 'var(--green)' : 'var(--red)';
+const showToast = msg => { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2800); };
+
+function showScreen(id) {
+  ['upload-screen','preview-screen','dashboard-screen','drilldown-screen'].forEach(s => {
+    document.getElementById(s).style.display = s===id ? (s==='upload-screen'?'flex':'block') : 'none';
+  });
+}
+function goBack() { showScreen('upload-screen'); }
+function showDashboard() { showScreen('dashboard-screen'); }
+
+// ═══════════════════════════════════════════════
+// FILE HANDLING
+// ═══════════════════════════════════════════════
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('drag-over'); const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
+fileInput.addEventListener('change', e => { if(e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  Papa.parse(file, { header:true, skipEmptyLines:true, complete: r => processCSV(r.data), error: err => alert('CSV parse error: '+err.message) });
+}
+
+function loadSampleData() {
+  Papa.parse(SAMPLE_CSV, { header:true, skipEmptyLines:true, complete: r => processCSV(r.data) });
+}
+
+/*
+window.onload = () => {
+  loadMyPortfolio();
+};
+*/
+
+async function loadMyPortfolio() {
+  showToast('Loading your portfolio...');
+  try {
+    const res = await fetch('/api/portfolio');
+    const csvText = await res.text();
+
+    Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true,
+      complete: r => processCSV(r.data)
+    });
+
+  } catch (err) {
+    alert('Failed to load your portfolio file');
+    console.error(err);
+  }
+}
+
+async function refreshDashboard() {
+  showToast('Refreshing prices...');
+
+  // 🔥 Clear caches to force fresh fetch
+  state.priceCache = {};
+  state.historyCache = {};
+  state.livePrices = {};
+  state.fullTimeSeries = [];
+
+  // Optional: destroy charts (prevents glitches)
+  if (state.portfolioChartInstance) state.portfolioChartInstance.destroy();
+  if (state.pieChartInstance) state.pieChartInstance.destroy();
+  if (state.pnlChartInstance) state.pnlChartInstance.destroy();
+
+  // Reload dashboard
+  await loadDashboard();
+
+  showToast('Portfolio updated 🚀');
+}
+
+// ═══════════════════════════════════════════════
+// CSV PROCESSING
+// ═══════════════════════════════════════════════
+function processCSV(rows) {
+  const errDiv = document.getElementById('preview-error');
+  errDiv.innerHTML = '';
+  const errors = [];
+  const clean = [];
+
+  rows.forEach((row, i) => {
+    const ticker = (row.ticker || row.Ticker || row.TICKER || '').trim().toUpperCase();
+    const qty = parseFloat(row.quantity || row.Quantity || row.qty || 0);
+    const avg = parseFloat(row.average_buy_price || row.avg_buy_price || row.buyPrice || row.buy_price || 0);
+    const date = row.buy_date || row.buyDate || row.date || '';
+    const upstoxTicker = (row.upstox_ticker || row.upstoxTicker || '').trim().toUpperCase();
+    if (!ticker) { errors.push(`Row ${i+1}: missing ticker`); return; }
+    if (!qty || qty<=0) { errors.push(`Row ${i+1}: invalid quantity`); return; }
+    clean.push({ 
+      ticker, 
+      qty, 
+      avg, 
+      date: date.trim(),
+      upstoxTicker: upstoxTicker || null
+    });
+  });
+
+  if (errors.length) errDiv.innerHTML = `<div class="error-box">${errors.join('<br>')}</div>`;
+  if (!clean.length) { errDiv.innerHTML += `<div class="error-box">No valid rows found.</div>`; return; }
+
+  state.rawRows = clean;
+  state.holdings = aggregateHoldings(clean);
+  showPreview();
+}
+
+function aggregateHoldings(rows) {
+  const map = {};
+  rows.forEach(r => {
+    if (!map[r.ticker]) {
+      map[r.ticker] = { 
+        ticker: r.ticker, 
+        totalQty: 0, 
+        totalCost: 0, 
+        dates: [],
+        upstoxTicker: r.upstoxTicker || null
+      };
+    }
+    map[r.ticker].totalQty += r.qty;
+    map[r.ticker].totalCost += r.qty * r.avg;
+    if (r.date) map[r.ticker].dates.push(r.date);
+  });
+  Object.values(map).forEach(h => {
+    h.avgBuy = h.totalCost / h.totalQty;
+    h.invested = h.totalCost;
+    h.earliestDate = h.dates.length ? h.dates.sort()[0] : null;
+  });
+  return map;
+}
+
+// ═══════════════════════════════════════════════
+// PREVIEW
+// ═══════════════════════════════════════════════
+function showPreview() {
+  const tbody = document.querySelector('#preview-table tbody');
+  tbody.innerHTML = '';
+  const holdings = Object.values(state.holdings);
+  holdings.forEach(h => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${h.ticker}</strong></td>
+      <td>
+        ${h.upstoxTicker ? h.upstoxTicker : '—'}
+        ${h.upstoxTicker ? '<div class="badge badge-green">UPSTOX</div>' : ''}
+      </td>
+      <td>${h.totalQty}</td>
+      <td>${h.avgBuy.toFixed(2)}</td>
+      <td>${h.invested.toLocaleString('en-IN',{maximumFractionDigits:0})}</td>
+      <td>${h.earliestDate||'—'}</td>`;
+    tbody.appendChild(tr);
+  });
+  const totalInvested = holdings.reduce((s,h)=>s+h.invested,0);
+  document.getElementById('preview-summary').textContent = `${holdings.length} stocks · Total invested: ₹${totalInvested.toLocaleString('en-IN',{maximumFractionDigits:0})}`;
+  showScreen('preview-screen');
+}
+
+// ═══════════════════════════════════════════════
+// PRICE FETCHING (Yahoo Finance via allorigins proxy)
+// ═══════════════════════════════════════════════
+
+async function fetchPrice(ticker) {
+  if (state.priceCache[ticker]) return state.priceCache[ticker];
+  try {
+    const res = await fetch(`/api/price?ticker=${ticker}`);
+    const data = await res.json();
+    return data.price;
+  } catch(e) { return null; }
+}
+
+async function fetchHistory(ticker, upstoxTicker, range='2y') {
+  const key = ticker + '_' + (upstoxTicker || '') + '_' + range;
+  if (state.historyCache[key]) return state.historyCache[key];
+
+  try {
+    const url = `/api/historyUpstox?ticker=${ticker}&upstox_ticker=${upstoxTicker || ''}&range=${range}`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    const series = {};
+    data.forEach(d => {
+      series[d.date] = d.price;
+    });
+
+    state.historyCache[key] = series;
+    return series;
+
+  } catch(e) {
+    console.error('History fetch failed:', ticker, e);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════
+// PORTFOLIO TIME SERIES
+// ═══════════════════════════════════════════════
+function forwardFill(series) {
+  const dates = Object.keys(series).sort();
+  if (!dates.length) return series;
+  const filled = {};
+  const start = new Date(dates[0]);
+  const end = new Date(dates[dates.length-1]);
+  let last = null;
+  for (let d=new Date(start); d<=end; d.setDate(d.getDate()+1)) {
+    const key = d.toISOString().split('T')[0];
+    if (series[key] != null) last = series[key];
+    if (last != null) filled[key] = last;
+  }
+  return filled;
+}
+
+async function buildTimeSeries(histories) {
+  const holdings = Object.values(state.holdings);
+  // Find date range
+  const allDates = new Set();
+  holdings.forEach(h => {
+    const hist = histories[h.ticker];
+    if (hist) Object.keys(hist).forEach(d => allDates.add(d));
+  });
+  const sortedDates = [...allDates].sort();
+  if (!sortedDates.length) return [];
+
+  const result = sortedDates.map(date => {
+    let value = 0;
+    holdings.forEach(h => {
+      const hist = histories[h.ticker];
+      if (!hist) return;
+      // Only include after buy date
+      if (h.earliestDate && date < h.earliestDate) return;
+      const price = hist[date];
+      if (price != null) value += price * h.totalQty;
+    });
+    return { date, value: Math.round(value) };
+  }).filter(p => p.value > 0);
+
+  return result;
+}
+
+// ═══════════════════════════════════════════════
+// DASHBOARD LOAD
+// ═══════════════════════════════════════════════
+async function loadDashboard() {
+  showScreen('dashboard-screen');
+  const loadingDiv = document.getElementById('dash-loading');
+  const contentDiv = document.getElementById('dash-content');
+  const loadMsg = document.getElementById('loading-msg');
+  loadingDiv.style.display = 'flex';
+  contentDiv.style.display = 'none';
+
+  const tickers = Object.keys(state.holdings);
+  const histories = {};
+
+  // Fetch histories
+  for (let i=0; i<tickers.length; i++) {
+    loadMsg.textContent = `Fetching history for ${tickers[i]} (${i+1}/${tickers.length})…`;
+    const h = state.holdings[tickers[i]];
+    const hist = await fetchHistory(h.ticker, h.upstoxTicker, '2y');
+    if (hist) histories[tickers[i]] = forwardFill(hist);
+    await new Promise(r => setTimeout(r, 120));
+  }
+
+  // Live prices (last value from history or direct fetch)
+  loadMsg.textContent = 'Fetching live prices…';
+  for (const t of tickers) {
+    let livePrice = await fetchPrice(t);
+    if (!livePrice && histories[t]) {
+      const dates = Object.keys(histories[t]).sort();
+      livePrice = histories[t][dates[dates.length-1]];
+    }
+    state.livePrices[t] = livePrice;
+    await new Promise(r => setTimeout(r, 80));
+  }
+
+  // Build time series
+  loadMsg.textContent = 'Building portfolio chart…';
+  state.fullTimeSeries = await buildTimeSeries(histories);
+  state.histories = histories;
+
+  loadingDiv.style.display = 'none';
+  contentDiv.style.display = 'block';
+
+  renderDashboard();
+}
+
+// ═══════════════════════════════════════════════
+// RENDER DASHBOARD
+// ═══════════════════════════════════════════════
+function renderDashboard() {
+  const holdings = Object.values(state.holdings);
+  let totalInvested = 0, totalCurrent = 0;
+  holdings.forEach(h => {
+    const lp = state.livePrices[h.ticker];
+    totalInvested += h.invested;
+    if (lp) totalCurrent += lp * h.totalQty;
+  });
+  const totalPnl = totalCurrent - totalInvested;
+  const totalPnlPct = totalInvested ? (totalPnl/totalInvested)*100 : 0;
+
+  // Best/worst
+  let best = null, worst = null;
+  holdings.forEach(h => {
+    const lp = state.livePrices[h.ticker];
+    if (!lp) return;
+    const pnlPct = ((lp - h.avgBuy)/h.avgBuy)*100;
+    if (!best || pnlPct > best.pct) best = {ticker:h.ticker, pct:pnlPct};
+    if (!worst || pnlPct < worst.pct) worst = {ticker:h.ticker, pct:pnlPct};
+  });
+
+  const statCards = document.getElementById('stat-cards');
+  statCards.innerHTML = `
+    <div class="stat-card">
+      <div class="stat-label">Total Invested</div>
+      <div class="stat-value">${fmt(totalInvested)}</div>
+      <div class="stat-sub">${holdings.length} stocks</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Current Value</div>
+      <div class="stat-value" style="color:${totalCurrent?'var(--text)':'var(--text2)'}">
+        ${totalCurrent ? fmt(totalCurrent) : 'Fetching…'}
+      </div>
+      <div class="stat-sub" style="color:${colorPnl(totalPnl)}">
+        ${totalCurrent ? pct(totalPnlPct)+' overall' : ''}
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total P&amp;L</div>
+      <div class="stat-value" style="color:${colorPnl(totalPnl)}">${totalCurrent ? fmt(Math.abs(totalPnl)) : '—'}</div>
+      <div class="stat-sub" style="color:${colorPnl(totalPnl)}">${totalCurrent ? (totalPnl>=0?'Profit':'Loss')+' · '+pct(totalPnlPct) : ''}</div>
+    </div>
+    ${best ? `<div class="stat-card">
+      <div class="stat-label">Best Performer</div>
+      <div class="stat-value" style="color:var(--green);font-size:1.3rem">${best.ticker}</div>
+      <div class="stat-sub" style="color:var(--green)">${pct(best.pct)}</div>
+    </div>` : ''}`;
+
+  renderPortfolioChart(state.currentFilter);
+  renderPieChart(holdings, totalCurrent);
+  renderPnlChart(holdings);
+  renderHoldingCards(holdings, totalCurrent);
+}
+
+function filterTimeSeries(filter) {
+  const all = state.fullTimeSeries;
+  if (!all.length) return all;
+  const last = new Date(all[all.length-1].date);
+  let cutoff;
+  if (filter==='1M') { cutoff = new Date(last); cutoff.setMonth(cutoff.getMonth()-1); }
+  else if (filter==='3M') { cutoff = new Date(last); cutoff.setMonth(cutoff.getMonth()-3); }
+  else if (filter==='1Y') { cutoff = new Date(last); cutoff.setFullYear(cutoff.getFullYear()-1); }
+  else return all;
+  const cutStr = cutoff.toISOString().split('T')[0];
+  return all.filter(p => p.date >= cutStr);
+}
+
+function renderPortfolioChart(filter) {
+  const series = filterTimeSeries(filter);
+  const labels = series.map(p => p.date);
+  const values = series.map(p => p.value);
+
+  const isUp = values.length > 1 && values[values.length-1] >= values[0];
+  const color = isUp ? '#22c55e' : '#ef4444';
+
+  if (state.portfolioChartInstance) state.portfolioChartInstance.destroy();
+  const ctx = document.getElementById('portfolioChart').getContext('2d');
+  const grad = ctx.createLinearGradient(0,0,0,300);
+  grad.addColorStop(0, isUp ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.18)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+  state.portfolioChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: color,
+        borderWidth: 2,
+        backgroundColor: grad,
+        fill: true,
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: color,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend:{display:false}, tooltip:{
+        mode:'index', intersect:false,
+        backgroundColor:'#1a1a1f', borderColor:'rgba(255,255,255,0.1)', borderWidth:1,
+        titleColor:'#8a8a9a', bodyColor:'#f0f0f5', padding:10,
+        callbacks: { label: ctx => '  ₹'+ctx.parsed.y.toLocaleString('en-IN') }
+      }},
+      scales: {
+        x: { grid:{color:'rgba(255,255,255,0.04)'}, ticks:{color:'#55556a', font:{size:11}, maxTicksLimit:8} },
+        y: { grid:{color:'rgba(255,255,255,0.04)'}, ticks:{color:'#55556a', font:{size:11}, callback: v=>'₹'+v.toLocaleString('en-IN',{notation:'compact',maximumFractionDigits:1})} }
+      },
+      interaction: { mode:'index', intersect:false }
+    }
+  });
+}
+
+function setTimeFilter(f, btn) {
+  state.currentFilter = f;
+  document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderPortfolioChart(f);
+}
+
+function renderPieChart(holdings, totalCurrent) {
+  const data = holdings.map(h => {
+    const lp = state.livePrices[h.ticker];
+    return lp ? lp * h.totalQty : 0;
+  }).filter(v => v > 0);
+  const labels = holdings.filter(h => (state.livePrices[h.ticker]||0) > 0).map(h => h.ticker);
+  const COLORS = ['#6366f1','#22c55e','#f59e0b','#ef4444','#3b82f6','#ec4899','#8b5cf6','#14b8a6','#f97316'];
+
+  if (state.pieChartInstance) state.pieChartInstance.destroy();
+  const ctx = document.getElementById('pieChart').getContext('2d');
+  state.pieChartInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets:[{ data, backgroundColor: labels.map((_,i)=>COLORS[i%COLORS.length]), borderWidth:2, borderColor:'#141417', hoverOffset:8 }] },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{position:'right', labels:{color:'#8a8a9a', boxWidth:10, padding:12, font:{size:11}}},
+        tooltip:{backgroundColor:'#1a1a1f', borderColor:'rgba(255,255,255,0.1)', borderWidth:1, titleColor:'#f0f0f5', bodyColor:'#8a8a9a', padding:10,
+          callbacks:{label: ctx=>` ${ctx.label}: ${((ctx.parsed/data.reduce((a,b)=>a+b,0))*100).toFixed(1)}%`}
+        }
+      },
+      cutout:'65%'
+    }
+  });
+}
+
+function renderPnlChart(holdings) {
+  const sorted = holdings.filter(h => state.livePrices[h.ticker]).sort((a,b)=>{
+    const pa = ((state.livePrices[a.ticker]-a.avgBuy)/a.avgBuy)*100;
+    const pb = ((state.livePrices[b.ticker]-b.avgBuy)/b.avgBuy)*100;
+    return pb-pa;
+  });
+  const labels = sorted.map(h=>h.ticker);
+  const data = sorted.map(h=>parseFloat((((state.livePrices[h.ticker]-h.avgBuy)/h.avgBuy)*100).toFixed(2)));
+  const colors = data.map(v=>v>=0?'rgba(34,197,94,0.8)':'rgba(239,68,68,0.8)');
+
+  if (state.pnlChartInstance) state.pnlChartInstance.destroy();
+  const ctx = document.getElementById('pnlChart').getContext('2d');
+  state.pnlChartInstance = new Chart(ctx, {
+    type:'bar',
+    data:{labels, datasets:[{data, backgroundColor:colors, borderRadius:4, borderSkipped:false}]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}, tooltip:{backgroundColor:'#1a1a1f', borderColor:'rgba(255,255,255,0.1)', borderWidth:1, titleColor:'#f0f0f5', bodyColor:'#8a8a9a', padding:10,
+        callbacks:{label:ctx=>` ${ctx.parsed.y>=0?'+':''}${ctx.parsed.y.toFixed(2)}%`}}},
+      scales:{
+        x:{grid:{display:false}, ticks:{color:'#55556a', font:{size:11}}},
+        y:{grid:{color:'rgba(255,255,255,0.04)'}, ticks:{color:'#55556a', font:{size:11}, callback:v=>v+'%'}}
+      }
+    }
+  });
+}
+
+function renderHoldingCards(holdings, totalCurrent) {
+  const grid = document.getElementById('holdings-grid');
+  grid.innerHTML = '';
+  const COLORS = ['#6366f1','#22c55e','#f59e0b','#ef4444','#3b82f6','#ec4899','#8b5cf6','#14b8a6','#f97316'];
+
+  holdings.forEach((h, i) => {
+    const lp = state.livePrices[h.ticker];
+    const currentVal = lp ? lp * h.totalQty : null;
+    const pnlVal = currentVal ? currentVal - h.invested : null;
+    const pnlPct = pnlVal ? (pnlVal/h.invested)*100 : null;
+    const allocPct = totalCurrent && currentVal ? (currentVal/totalCurrent)*100 : null;
+    const color = COLORS[i % COLORS.length];
+
+    const card = document.createElement('div');
+    card.className = 'holding-card';
+    card.onclick = () => openDrilldown(h.ticker);
+    card.innerHTML = `
+      <div class="hc-top">
+        <div>
+          <div class="hc-ticker">${h.ticker}</div>
+          <div class="hc-name">Qty: ${h.totalQty} · Avg: ${h.avgBuy.toFixed(2)}</div>
+        </div>
+        <div class="hc-pnl">
+          <div class="hc-pnl-val" style="color:${pnlVal!=null?colorPnl(pnlVal):'var(--text2)'}">${pnlVal!=null?(pnlVal>=0?'+':'')+pnlVal.toFixed(0):'—'}</div>
+          <div class="hc-pnl-pct" style="color:${pnlPct!=null?colorPnl(pnlPct):'var(--text2)'}">${pnlPct!=null?pct(pnlPct):'no price'}</div>
+        </div>
+      </div>
+      <div class="hc-bar-bg"><div class="hc-bar" style="width:${allocPct?Math.min(100,allocPct*2):10}%;background:${color}"></div></div>
+      <div class="hc-bottom">
+        <div><div class="hc-meta-label">Invested</div><div class="hc-meta-val">${fmt(h.invested)}</div></div>
+        <div><div class="hc-meta-label">Current</div><div class="hc-meta-val">${currentVal?fmt(currentVal):'—'}</div></div>
+        <div><div class="hc-meta-label">Live Price</div><div class="hc-meta-val">${lp?lp.toFixed(2):'—'}</div></div>
+        <div><div class="hc-meta-label">Allocation</div><div class="hc-meta-val">${allocPct?allocPct.toFixed(1)+'%':'—'}</div></div>
+      </div>`;
+    grid.appendChild(card);
+  });
+}
+
+// ═══════════════════════════════════════════════
+// DRILLDOWN
+// ═══════════════════════════════════════════════
+async function openDrilldown(ticker) {
+  showScreen('drilldown-screen');
+  const h = state.holdings[ticker];
+  document.getElementById('dd-ticker').textContent = ticker;
+  document.getElementById('dd-subtitle').textContent = `${h.totalQty} shares · Avg buy: ${h.avgBuy.toFixed(2)} · Invested: ₹${h.invested.toLocaleString('en-IN',{maximumFractionDigits:0})}`;
+
+  const lp = state.livePrices[ticker];
+  const currentVal = lp ? lp * h.totalQty : null;
+  const pnlVal = currentVal ? currentVal - h.invested : null;
+  const pnlPct = pnlVal ? (pnlVal/h.invested)*100 : null;
+
+  // CAGR calculation
+  let cagr = null;
+  if (h.earliestDate && lp) {
+    const days = (Date.now() - new Date(h.earliestDate)) / (1000*60*60*24);
+    const years = days/365;
+    if (years > 0.1) cagr = (Math.pow(lp/h.avgBuy, 1/years)-1)*100;
+  }
+
+  document.getElementById('dd-cards').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Current Price</div><div class="stat-value">${lp?lp.toFixed(2):'—'}</div></div>
+    <div class="stat-card"><div class="stat-label">P&L</div><div class="stat-value" style="color:${pnlVal!=null?colorPnl(pnlVal):'inherit'}">${pnlVal!=null?fmt(Math.abs(pnlVal)):'—'}</div><div class="stat-sub" style="color:${pnlPct!=null?colorPnl(pnlPct):'inherit'}">${pnlPct!=null?pct(pnlPct):''}</div></div>
+    <div class="stat-card"><div class="stat-label">Current Value</div><div class="stat-value">${currentVal?fmt(currentVal):'—'}</div></div>
+    ${cagr!=null?`<div class="stat-card"><div class="stat-label">CAGR</div><div class="stat-value" style="color:${colorPnl(cagr)}">${pct(cagr)}</div></div>`:''}`;
+
+  // Price chart
+  const hist = state.histories && state.histories[ticker];
+  if (hist) {
+    const dates = Object.keys(hist).sort();
+    const prices = dates.map(d => hist[d]);
+    const buyDate = h.earliestDate;
+
+    if (state.ddChartInstance) state.ddChartInstance.destroy();
+    const ctx = document.getElementById('ddChart').getContext('2d');
+    const grad = ctx.createLinearGradient(0,0,0,300);
+    grad.addColorStop(0,'rgba(99,102,241,0.2)');
+    grad.addColorStop(1,'rgba(0,0,0,0)');
+
+    const buyIdx = buyDate ? dates.findIndex(d => d >= buyDate) : -1;
+    const annotations = {};
+    if (buyIdx >= 0) {
+      annotations.buyLine = {
+        type:'line', xMin:buyIdx, xMax:buyIdx,
+        borderColor:'rgba(245,158,11,0.6)', borderWidth:1.5, borderDash:[4,4],
+        label:{content:'Buy', display:true, color:'#f59e0b', font:{size:10}, position:'start'}
+      };
+    }
+
+    state.ddChartInstance = new Chart(ctx, {
+      type:'line',
+      data:{
+        labels:dates,
+        datasets:[{data:prices, borderColor:'#6366f1', borderWidth:2, backgroundColor:grad, fill:true, pointRadius:0, pointHoverRadius:5, tension:0.3}]
+      },
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false}, tooltip:{mode:'index', intersect:false, backgroundColor:'#1a1a1f', borderColor:'rgba(255,255,255,0.1)', borderWidth:1, titleColor:'#8a8a9a', bodyColor:'#f0f0f5', padding:10}},
+        scales:{
+          x:{grid:{color:'rgba(255,255,255,0.04)'}, ticks:{color:'#55556a', font:{size:11}, maxTicksLimit:8}},
+          y:{grid:{color:'rgba(255,255,255,0.04)'}, ticks:{color:'#55556a', font:{size:11}, callback:v=>v.toFixed(0)}}
+        }
+      }
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════════
+function exportChart() {
+  const chart = state.portfolioChartInstance;
+  if (!chart) return;
+  const url = chart.canvas.toDataURL('image/png');
+  const a = document.createElement('a');
+  a.href = url; a.download = 'portfolio-chart.png'; a.click();
+  showToast('Chart exported!');
+}
+</script>
+</body>
+</html>
