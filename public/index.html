@@ -140,8 +140,14 @@
     <div class="drop-title">Drop your CSV here</div>
     <div class="drop-sub">Supports ticker, quantity, average_buy_price,<br>buy_date columns</div>
     <input type="file" id="file-input" accept=".csv">
-    <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">Browse File</button>
-    <button class="btn btn-primary" onclick="loadMyPortfolio()">Load my portfolio</button>
+    <div style="display: flex; gap: 12px;">
+      <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+        Browse File
+      </button>
+      <button class="btn btn-primary" onclick="loadMyPortfolio()">
+        Load Portfolio
+      </button>
+</div>
     <div class="or-divider">or</div>
     <button class="sample-btn" onclick="loadSampleData()">Load sample portfolio</button>
   </div>
@@ -176,12 +182,12 @@ RELIANCE.NS,5,2550.00,2023-11-01,</pre>
   <div class="preview-table-wrap">
     <table id="preview-table">
       <thead><tr>
-        <th>Ticker</th>
-        <th>Upstox Ticker</th>
-        <th>Qty</th>
-        <th>Avg Buy Price</th>
-        <th>Invested</th>
-        <th>Buy Date</th>
+        <th id="th-ticker" onclick="sortPreview('ticker')">Ticker</th>
+        <th id="th-upstoxTicker" onclick="sortPreview('upstoxTicker')">Upstox Ticker</th>
+        <th id="th-totalQty" onclick="sortPreview('totalQty')">Qty</th>
+        <th id="th-avgBuy" onclick="sortPreview('avgBuy')">Avg Buy Price</th>
+        <th id="th-invested" onclick="sortPreview('invested')">Invested</th>
+        <th id="th-earliestDate" onclick="sortPreview('earliestDate')">Buy Date</th>
       </tr></thead>
       <tbody></tbody>
     </table>
@@ -259,7 +265,11 @@ let state = {
   pieChartInstance: null,
   pnlChartInstance: null,
   ddChartInstance: null,
-  livePrices: {}
+  livePrices: {},
+  previewSort: {
+    key: 'invested',   // ✅ default column
+    asc: false         // ✅ descending
+  }
 };
 
 const SAMPLE_CSV = `ticker,quantity,average_buy_price,buy_date
@@ -415,9 +425,15 @@ function aggregateHoldings(rows) {
 function showPreview() {
   const tbody = document.querySelector('#preview-table tbody');
   tbody.innerHTML = '';
-  const holdings = Object.values(state.holdings);
-  holdings.forEach(h => {
+
+  let holdings = Object.values(state.holdings);
+
+  // ✅ APPLY DEFAULT SORT
+  holdings = sortHoldings(holdings);
+
+  holdings.forEach((h, index) => {
     const tr = document.createElement('tr');
+
     tr.innerHTML = `
       <td><strong>${h.ticker}</strong></td>
       <td>
@@ -428,10 +444,22 @@ function showPreview() {
       <td>${h.avgBuy.toFixed(2)}</td>
       <td>${h.invested.toLocaleString('en-IN',{maximumFractionDigits:0})}</td>
       <td>${h.earliestDate||'—'}</td>`;
+
+    // ✅ Highlight top row
+    if (index < 3) {
+      tr.style.background = 'rgba(99,102,241,0.08)';
+    }
+
     tbody.appendChild(tr);
   });
+
   const totalInvested = holdings.reduce((s,h)=>s+h.invested,0);
-  document.getElementById('preview-summary').textContent = `${holdings.length} stocks · Total invested: ₹${totalInvested.toLocaleString('en-IN',{maximumFractionDigits:0})}`;
+  document.getElementById('preview-summary').textContent =
+    `${holdings.length} stocks · Total invested: ₹${totalInvested.toLocaleString('en-IN',{maximumFractionDigits:0})}`;
+
+  // ✅ SHOW ARROW ON "Invested ↓"
+  updateSortIndicators();
+
   showScreen('preview-screen');
 }
 
@@ -522,45 +550,76 @@ async function buildTimeSeries(histories) {
 // ═══════════════════════════════════════════════
 async function loadDashboard() {
   showScreen('dashboard-screen');
+
   const loadingDiv = document.getElementById('dash-loading');
   const contentDiv = document.getElementById('dash-content');
   const loadMsg = document.getElementById('loading-msg');
+
   loadingDiv.style.display = 'flex';
   contentDiv.style.display = 'none';
 
   const tickers = Object.keys(state.holdings);
-  const histories = {};
 
-  // Fetch histories
-  for (let i=0; i<tickers.length; i++) {
-    loadMsg.textContent = `Fetching history for ${tickers[i]} (${i+1}/${tickers.length})…`;
-    const h = state.holdings[tickers[i]];
-    const hist = await fetchHistory(h.ticker, h.upstoxTicker, '2y');
-    if (hist) histories[tickers[i]] = forwardFill(hist);
-    await new Promise(r => setTimeout(r, 120));
+  // ✅ Simple unified loading message
+  // loadMsg.textContent = 'Loading portfolio data…';
+  loadMsg.textContent = `Fetching Historic Data for ${tickers.length} stocks…`;
+
+  try {
+    // 🔥 1. FETCH ALL HISTORIES IN PARALLEL
+    const historyPromises = tickers.map(async (ticker) => {
+      const h = state.holdings[ticker];
+      const hist = await fetchHistory(h.ticker, h.upstoxTicker, '2y');
+
+      return {
+        ticker,
+        data: hist ? forwardFill(hist) : null
+      };
+    });
+
+    const historyResults = await Promise.all(historyPromises);
+
+    const histories = {};
+    historyResults.forEach(({ ticker, data }) => {
+      if (data) histories[ticker] = data;
+    });
+
+    loadMsg.textContent = 'Fetching latest prices…';
+
+    // 🔥 2. FETCH ALL LIVE PRICES IN PARALLEL
+    const pricePromises = tickers.map(async (ticker) => {
+      let price = await fetchPrice(ticker);
+
+      // fallback to last historical price
+      if (!price && histories[ticker]) {
+        const dates = Object.keys(histories[ticker]).sort();
+        price = histories[ticker][dates[dates.length - 1]];
+      }
+
+      return { ticker, price };
+    });
+
+    const priceResults = await Promise.all(pricePromises);
+
+    priceResults.forEach(({ ticker, price }) => {
+      state.livePrices[ticker] = price;
+    });
+
+    // 🔥 3. BUILD TIME SERIES
+    loadMsg.textContent = 'Building portfolio chart…';
+
+    state.fullTimeSeries = await buildTimeSeries(histories);
+    state.histories = histories;
+
+    // ✅ DONE
+    loadingDiv.style.display = 'none';
+    contentDiv.style.display = 'block';
+
+    renderDashboard();
+
+  } catch (err) {
+    console.error(err);
+    loadingDiv.innerHTML = `<div class="error-box">Failed to load portfolio data</div>`;
   }
-
-  // Live prices (last value from history or direct fetch)
-  loadMsg.textContent = 'Fetching live prices…';
-  for (const t of tickers) {
-    let livePrice = await fetchPrice(t);
-    if (!livePrice && histories[t]) {
-      const dates = Object.keys(histories[t]).sort();
-      livePrice = histories[t][dates[dates.length-1]];
-    }
-    state.livePrices[t] = livePrice;
-    await new Promise(r => setTimeout(r, 80));
-  }
-
-  // Build time series
-  loadMsg.textContent = 'Building portfolio chart…';
-  state.fullTimeSeries = await buildTimeSeries(histories);
-  state.histories = histories;
-
-  loadingDiv.style.display = 'none';
-  contentDiv.style.display = 'block';
-
-  renderDashboard();
 }
 
 // ═══════════════════════════════════════════════
@@ -775,6 +834,111 @@ function renderHoldingCards(holdings, totalCurrent) {
         <div><div class="hc-meta-label">Allocation</div><div class="hc-meta-val">${allocPct?allocPct.toFixed(1)+'%':'—'}</div></div>
       </div>`;
     grid.appendChild(card);
+  });
+}
+
+function renderPreviewTable() {
+  let holdings = Object.values(state.holdings);
+
+  // ✅ Apply default sort
+  holdings = sortHoldings(holdings);
+
+  renderSortedPreview(holdings);
+  updateSortIndicators();
+}
+
+function sortHoldings(holdings) {
+  const { key, asc } = state.previewSort;
+
+  return holdings.sort((a, b) => {
+    let valA = a[key];
+    let valB = b[key];
+
+    if (valA == null) return 1;
+    if (valB == null) return -1;
+
+    if (typeof valA === 'number') {
+      return asc ? valA - valB : valB - valA;
+    }
+
+    if (key === 'earliestDate') {
+      return asc
+        ? new Date(valA) - new Date(valB)
+        : new Date(valB) - new Date(valA);
+    }
+
+    return asc
+      ? valA.toString().localeCompare(valB.toString())
+      : valB.toString().localeCompare(valA.toString());
+  });
+}
+
+function sortPreview(key) {
+  if (state.previewSort.key === key) {
+    state.previewSort.asc = !state.previewSort.asc;
+  } else {
+    state.previewSort.key = key;
+    state.previewSort.asc = true;
+  }
+
+  let holdings = Object.values(state.holdings);
+  holdings = sortHoldings(holdings);
+
+  renderSortedPreview(holdings);
+  updateSortIndicators();
+}
+
+function renderSortedPreview(holdings) {
+  const tbody = document.querySelector('#preview-table tbody');
+  tbody.innerHTML = '';
+
+  holdings.forEach(h => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${h.ticker}</strong></td>
+      <td>
+        ${h.upstoxTicker ? h.upstoxTicker : '—'}
+        ${h.upstoxTicker ? '<div class="badge badge-green">UPSTOX</div>' : ''}
+      </td>
+      <td>${h.totalQty}</td>
+      <td>${h.avgBuy.toFixed(2)}</td>
+      <td>${h.invested.toLocaleString('en-IN',{maximumFractionDigits:0})}</td>
+      <td>${h.earliestDate||'—'}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function updateSortIndicators() {
+  const columns = [
+    'ticker',
+    'upstoxTicker',
+    'totalQty',
+    'avgBuy',
+    'invested',
+    'earliestDate'
+  ];
+
+  columns.forEach(col => {
+    const th = document.getElementById(`th-${col}`);
+
+    // reset text (base labels)
+    const labels = {
+      ticker: 'Ticker',
+      upstoxTicker: 'Upstox Ticker',
+      totalQty: 'Qty',
+      avgBuy: 'Avg Buy Price',
+      invested: 'Invested',
+      earliestDate: 'Buy Date'
+    };
+
+    if (!th) return;
+
+    // ✅ Only active column gets arrow
+    if (state.previewSort.key === col) {
+      th.innerHTML = `${labels[col]} ${state.previewSort.asc ? '↑' : '↓'}`;
+    } else {
+      th.innerHTML = labels[col];
+    }
   });
 }
 
