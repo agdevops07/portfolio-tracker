@@ -11,7 +11,6 @@ export async function fetchPrice(ticker) {
     const res = await fetch(`/api/price?ticker=${ticker}`);
     const data = await res.json();
     state.priceCache[ticker] = data.price;
-    if (data.previousClose) state.prevClosePrices[ticker] = data.previousClose;
     return data.price;
   } catch (e) {
     console.warn('fetchPrice failed:', ticker, e);
@@ -30,7 +29,6 @@ export async function fetchHistory(ticker, upstoxTicker, range = '2y') {
 
     const series = {};
     const today = new Date().toISOString().split('T')[0];
-
     data.forEach((d) => {
       if (d.date === today) return;
       series[d.date] = d.price;
@@ -44,29 +42,16 @@ export async function fetchHistory(ticker, upstoxTicker, range = '2y') {
   }
 }
 
-// Fetch today's intraday / 1d data
-export async function fetchDayHistory(ticker, upstoxTicker) {
-  const key = `day_${ticker}_${upstoxTicker || ''}`;
-  if (state.dayHistoryCache[key]) return state.dayHistoryCache[key];
-
+export async function fetchDayChart(ticker) {
+  if (state.dayChartCache[ticker]) return state.dayChartCache[ticker];
   try {
-    // Use 5d range and filter to today only — Yahoo Finance 1d interval
-    const url = `/api/history?ticker=${ticker}&upstox_ticker=${upstoxTicker || ''}&range=5d&interval=1d`;
-    const res = await fetch(url);
+    const res = await fetch(`/api/dayChart?ticker=${ticker}`);
     const data = await res.json();
-
-    const today = new Date().toISOString().split('T')[0];
-    // Return full sorted array for day chart (use last few days if today not available)
-    const series = Array.isArray(data)
-      ? data.map(d => ({ time: d.date, price: d.price }))
-      : [];
-
-    const sorted = series.sort((a, b) => a.time.localeCompare(b.time));
-    state.dayHistoryCache[key] = sorted;
-    return sorted;
+    state.dayChartCache[ticker] = data;
+    return data;
   } catch (e) {
-    console.warn('fetchDayHistory failed:', ticker, e);
-    return [];
+    console.warn('fetchDayChart failed:', ticker, e);
+    return null;
   }
 }
 

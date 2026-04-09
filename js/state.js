@@ -8,43 +8,42 @@ export const state = {
   holdings: {},
   priceCache: {},
   historyCache: {},
-  dayHistoryCache: {},
+  dayChartCache: {},
   portfolioTimeSeries: [],
   fullTimeSeries: [],
   currentFilter: '1Y',
+  ddHistoryFilter: '1Y',
+  currentDDTicker: null,
+  currentDDTab: 'day',
   portfolioChartInstance: null,
   pieChartInstance: null,
   pnlChartInstance: null,
   ddChartInstance: null,
   ddDayChartInstance: null,
-  portfolioDayChartInstance: null,
+  folioDayChartInstance: null,
   livePrices: {},
   prevClosePrices: {},
   histories: {},
-  dayHistories: {},
+  autoRefresh: true,
+  refreshInterval: 60,       // seconds
+  refreshTimer: null,
+  lastUpdated: null,
   previewSort: {
     key: 'invested',
     asc: false,
   },
-  refreshIntervalId: null,
-  refreshIntervalMs: 60000,
-  refreshPaused: false,
 };
 
 export function resetCaches() {
   state.priceCache = {};
-  state.livePrices = {};
-  state.prevClosePrices = {};
-  state.dayHistoryCache = {};
-  state.dayHistories = {};
-}
-
-export function resetAllCaches() {
-  state.priceCache = {};
   state.historyCache = {};
-  state.dayHistoryCache = {};
+  state.dayChartCache = {};
   state.livePrices = {};
   state.prevClosePrices = {};
   state.fullTimeSeries = [];
-  state.dayHistories = {};
+}
+
+export function resetPriceCache() {
+  state.priceCache = {};
+  state.dayChartCache = {};
 }

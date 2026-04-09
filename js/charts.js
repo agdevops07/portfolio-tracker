@@ -5,6 +5,8 @@
 
 import { state } from './state.js';
 import { filterTimeSeries } from './timeSeries.js';
+import { fetchDayChart } from './api.js';
+import { pct, colorPnl } from './utils.js';
 
 export const COLORS = [
   '#6366f1', '#22c55e', '#f59e0b', '#ef4444',
@@ -25,7 +27,7 @@ const AXIS_DEFAULTS = {
   ticks: { color: '#55556a', font: { size: 11 } },
 };
 
-// ── Portfolio history line chart ─────────────────
+// ── Portfolio line chart ─────────────────────────
 export function renderPortfolioChart(filter) {
   const series = filterTimeSeries(filter);
   const labels = series.map((p) => p.date);
@@ -86,49 +88,65 @@ export function renderPortfolioChart(filter) {
 
 export function setTimeFilter(filter, btn) {
   state.currentFilter = filter;
-  document.querySelectorAll('.tf-btn').forEach((b) => b.classList.remove('active'));
+  document.querySelectorAll('#portfolio-time-filters .tf-btn').forEach((b) => b.classList.remove('active'));
   btn.classList.add('active');
   renderPortfolioChart(filter);
 }
 
-// ── Portfolio Day Chart ──────────────────────────
-export function renderPortfolioDayChart() {
-  const canvas = document.getElementById('portfolioDayChart');
-  if (!canvas) return;
+// ── Portfolio day chart ──────────────────────────
+export async function renderFolioDayChart(holdings) {
+  const allDay = {};
 
-  // Aggregate day values across all holdings
-  const holdings = Object.values(state.holdings);
-  const timeMap = {};
+  for (const h of holdings) {
+    const dayData = await fetchDayChart(h.ticker);
+    if (!dayData || !dayData.series) continue;
 
-  holdings.forEach((h) => {
-    const dayData = state.dayHistories[h.ticker];
-    if (!dayData || !dayData.length) return;
-    dayData.forEach(({ time, price }) => {
-      if (!timeMap[time]) timeMap[time] = 0;
-      timeMap[time] += price * h.totalQty;
+    // Store prev-close per ticker for Today's Change card
+    if (dayData.prevClose) state.prevClosePrices[h.ticker] = dayData.prevClose;
+
+    dayData.series.forEach((pt) => {
+      if (!allDay[pt.time]) allDay[pt.time] = 0;
+      allDay[pt.time] += pt.price * h.totalQty;
     });
-  });
+  }
 
-  const sortedTimes = Object.keys(timeMap).sort();
-  if (!sortedTimes.length) {
-    canvas.parentElement.innerHTML = '<div style="color:var(--text2);text-align:center;padding:2rem;font-size:13px;">Day chart data unavailable</div>';
+  // After all prev closes loaded, update the Today card
+  const { updateTodayChangeCard } = await import('./dashboard.js');
+  updateTodayChangeCard();
+
+  const times  = Object.keys(allDay).sort();
+  if (!times.length) {
+    const note = document.getElementById('folio-day-note');
+    if (note) note.textContent = 'No intraday data available';
     return;
   }
 
-  const labels = sortedTimes;
-  const values = sortedTimes.map((t) => Math.round(timeMap[t]));
+  const values = times.map((t) => parseFloat(allDay[t].toFixed(0)));
+  const labels = times.map((t) =>
+    new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+  );
 
-  const isUp = values.length > 1 && values[values.length - 1] >= values[0];
+  const first = values[0], last = values[values.length - 1];
+  const dayChg    = last - first;
+  const dayChgPct = first ? (dayChg / first) * 100 : 0;
+  const isUp = dayChg >= 0;
+
+  const changeEl = document.getElementById('folio-day-change');
+  if (changeEl) {
+    changeEl.innerHTML =
+      `<span style="color:${colorPnl(dayChg)};font-weight:700">${isUp ? '+' : ''}₹${Math.abs(dayChg).toLocaleString('en-IN', { maximumFractionDigits: 0 })} (${pct(dayChgPct)})</span>` +
+      ` <span style="color:var(--text3)">since open</span>`;
+  }
+
+  if (state.folioDayChartInstance) state.folioDayChartInstance.destroy();
+
+  const ctx   = document.getElementById('folioDayChart').getContext('2d');
   const color = isUp ? '#22c55e' : '#ef4444';
-
-  if (state.portfolioDayChartInstance) state.portfolioDayChartInstance.destroy();
-
-  const ctx = canvas.getContext('2d');
-  const grad = ctx.createLinearGradient(0, 0, 0, 220);
-  grad.addColorStop(0, isUp ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)');
+  const grad  = ctx.createLinearGradient(0, 0, 0, 280);
+  grad.addColorStop(0, isUp ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.18)');
   grad.addColorStop(1, 'rgba(0,0,0,0)');
 
-  state.portfolioDayChartInstance = new Chart(ctx, {
+  state.folioDayChartInstance = new Chart(ctx, {
     type: 'line',
     data: {
       labels,
@@ -139,7 +157,8 @@ export function renderPortfolioDayChart() {
         backgroundColor: grad,
         fill: true,
         pointRadius: 0,
-        pointHoverRadius: 4,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: color,
         tension: 0.3,
       }],
     },
@@ -156,7 +175,7 @@ export function renderPortfolioDayChart() {
         },
       },
       scales: {
-        x: { ...AXIS_DEFAULTS, ticks: { ...AXIS_DEFAULTS.ticks, maxTicksLimit: 6 } },
+        x: { ...AXIS_DEFAULTS, ticks: { ...AXIS_DEFAULTS.ticks, maxTicksLimit: 8 } },
         y: {
           ...AXIS_DEFAULTS,
           ticks: {
@@ -173,9 +192,9 @@ export function renderPortfolioDayChart() {
 // ── Allocation doughnut ──────────────────────────
 export function renderPieChart(holdings, totalCurrent) {
   const filtered = holdings.filter((h) => (state.livePrices[h.ticker] || 0) > 0);
-  const data = filtered.map((h) => state.livePrices[h.ticker] * h.totalQty);
+  const data   = filtered.map((h) => state.livePrices[h.ticker] * h.totalQty);
   const labels = filtered.map((h) => h.ticker);
-  const total = data.reduce((a, b) => a + b, 0);
+  const total  = data.reduce((a, b) => a + b, 0);
 
   if (state.pieChartInstance) state.pieChartInstance.destroy();
 
@@ -218,7 +237,7 @@ export function renderPnlChart(holdings) {
     });
 
   const labels = sorted.map((h) => h.ticker);
-  const data = sorted.map((h) =>
+  const data   = sorted.map((h) =>
     parseFloat((((state.livePrices[h.ticker] - h.avgBuy) / h.avgBuy) * 100).toFixed(2))
   );
   const colors = data.map((v) => (v >= 0 ? 'rgba(34,197,94,0.8)' : 'rgba(239,68,68,0.8)'));
@@ -247,14 +266,25 @@ export function renderPnlChart(holdings) {
   });
 }
 
-// ── Drilldown price history chart ────────────────
-export function renderDrilldownChart(ticker, hist, buyDate) {
-  const dates = Object.keys(hist).sort();
+// ── Drilldown: history chart ─────────────────────
+export function renderDrilldownChart(ticker, hist, buyDate, filter) {
+  let dates = Object.keys(hist).sort();
+
+  if (filter && filter !== 'ALL') {
+    const last = new Date(dates[dates.length - 1]);
+    let cutoff;
+    if (filter === '3M') { cutoff = new Date(last); cutoff.setMonth(cutoff.getMonth() - 3); }
+    else if (filter === '1Y') { cutoff = new Date(last); cutoff.setFullYear(cutoff.getFullYear() - 1); }
+    else if (filter === '2Y') { cutoff = new Date(last); cutoff.setFullYear(cutoff.getFullYear() - 2); }
+    const cutStr = cutoff.toISOString().split('T')[0];
+    dates = dates.filter((d) => d >= cutStr);
+  }
+
   const prices = dates.map((d) => hist[d]);
 
   if (state.ddChartInstance) state.ddChartInstance.destroy();
 
-  const ctx = document.getElementById('ddChart').getContext('2d');
+  const ctx  = document.getElementById('ddChart').getContext('2d');
   const grad = ctx.createLinearGradient(0, 0, 0, 300);
   grad.addColorStop(0, 'rgba(99,102,241,0.2)');
   grad.addColorStop(1, 'rgba(0,0,0,0)');
@@ -279,11 +309,7 @@ export function renderDrilldownChart(ticker, hist, buyDate) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        tooltip: {
-          ...TOOLTIP_DEFAULTS,
-          mode: 'index',
-          intersect: false,
-        },
+        tooltip: { ...TOOLTIP_DEFAULTS, mode: 'index', intersect: false },
       },
       scales: {
         x: { ...AXIS_DEFAULTS, ticks: { ...AXIS_DEFAULTS.ticks, maxTicksLimit: 8 } },
@@ -293,45 +319,61 @@ export function renderDrilldownChart(ticker, hist, buyDate) {
   });
 }
 
-// ── Drilldown day chart ───────────────────────────
-export function renderDrilldownDayChart(ticker) {
-  const canvas = document.getElementById('ddDayChart');
-  if (!canvas) return;
+// ── Drilldown: day (intraday) chart ──────────────
+export function renderDrilldownDayChart(series, prevClose) {
+  const labels = series.map((pt) =>
+    new Date(pt.time).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+  );
+  const prices = series.map((pt) => pt.price);
+  const base   = prevClose || prices[0];
+  const last   = prices[prices.length - 1];
+  const chg    = last - base;
+  const isUp   = chg >= 0;
 
-  const dayData = state.dayHistories[ticker] || [];
-  if (!dayData.length) {
-    canvas.parentElement.innerHTML = '<div style="color:var(--text2);text-align:center;padding:1.5rem;font-size:13px;">Day chart data unavailable</div>';
-    return;
+  const changeEl = document.getElementById('dd-day-change');
+  if (changeEl) {
+    changeEl.innerHTML =
+      `<span style="color:${colorPnl(chg)};font-weight:700">${isUp ? '+' : ''}${chg.toFixed(2)} (${pct((chg / base) * 100)})</span>` +
+      (prevClose ? ` <span style="color:var(--text3)">vs prev close ${prevClose.toFixed(2)}</span>` : '');
   }
-
-  const labels = dayData.map((d) => d.time);
-  const prices = dayData.map((d) => d.price);
-
-  const isUp = prices.length > 1 && prices[prices.length - 1] >= prices[0];
-  const color = isUp ? '#22c55e' : '#ef4444';
 
   if (state.ddDayChartInstance) state.ddDayChartInstance.destroy();
 
-  const ctx = canvas.getContext('2d');
-  const grad = ctx.createLinearGradient(0, 0, 0, 220);
-  grad.addColorStop(0, isUp ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)');
+  const ctx   = document.getElementById('ddDayChart').getContext('2d');
+  const color = isUp ? '#22c55e' : '#ef4444';
+  const grad  = ctx.createLinearGradient(0, 0, 0, 300);
+  grad.addColorStop(0, isUp ? 'rgba(34,197,94,0.18)' : 'rgba(239,68,68,0.18)');
   grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+  const datasets = [
+    {
+      data: prices,
+      borderColor: color,
+      borderWidth: 2,
+      backgroundColor: grad,
+      fill: true,
+      pointRadius: 0,
+      pointHoverRadius: 5,
+      tension: 0.3,
+      label: 'Price',
+    },
+  ];
+
+  if (prevClose) {
+    datasets.push({
+      data: prices.map(() => prevClose),
+      borderColor: 'rgba(255,255,255,0.15)',
+      borderWidth: 1,
+      borderDash: [4, 4],
+      pointRadius: 0,
+      fill: false,
+      label: 'Prev Close',
+    });
+  }
 
   state.ddDayChartInstance = new Chart(ctx, {
     type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        data: prices,
-        borderColor: color,
-        borderWidth: 2,
-        backgroundColor: grad,
-        fill: true,
-        pointRadius: 0,
-        pointHoverRadius: 4,
-        tension: 0.3,
-      }],
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -341,19 +383,22 @@ export function renderDrilldownDayChart(ticker) {
           ...TOOLTIP_DEFAULTS,
           mode: 'index',
           intersect: false,
+          filter: (item) => item.datasetIndex === 0,
+          callbacks: { label: (ctx) => ` ₹${ctx.parsed.y.toFixed(2)}` },
         },
       },
       scales: {
-        x: { ...AXIS_DEFAULTS, ticks: { ...AXIS_DEFAULTS.ticks, maxTicksLimit: 6 } },
-        y: { ...AXIS_DEFAULTS, ticks: { ...AXIS_DEFAULTS.ticks, callback: (v) => v.toFixed(2) } },
+        x: { ...AXIS_DEFAULTS, ticks: { ...AXIS_DEFAULTS.ticks, maxTicksLimit: 8 } },
+        y: { ...AXIS_DEFAULTS, ticks: { ...AXIS_DEFAULTS.ticks, callback: (v) => v.toFixed(0) } },
       },
+      interaction: { mode: 'index', intersect: false },
     },
   });
 }
 
 // ── Destroy all chart instances ──────────────────
 export function destroyAllCharts() {
-  ['portfolioChartInstance', 'pieChartInstance', 'pnlChartInstance', 'portfolioDayChartInstance'].forEach((key) => {
+  ['portfolioChartInstance', 'pieChartInstance', 'pnlChartInstance', 'folioDayChartInstance'].forEach((key) => {
     if (state[key]) { state[key].destroy(); state[key] = null; }
   });
 }
