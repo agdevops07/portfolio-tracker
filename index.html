@@ -80,7 +80,20 @@ AAPL,15,175.00,2023-03-01,
   <div class="dash-header">
     <div class="dash-logo">📈 Portfolio Tracker</div>
     <div class="header-actions">
-      <button class="export-btn" onclick="refreshDashboard()">🔄 Refresh</button>
+      <!-- Auto-refresh controls -->
+      <div class="refresh-controls">
+        <span id="last-refresh-time" class="refresh-timestamp"></span>
+        <select id="refresh-interval-sel" class="interval-sel" onchange="setRefreshInterval(+this.value)">
+          <option value="30000">30s</option>
+          <option value="60000" selected>1m</option>
+          <option value="120000">2m</option>
+          <option value="300000">5m</option>
+          <option value="600000">10m</option>
+        </select>
+        <button id="refresh-pause-btn" class="export-btn" onclick="toggleRefreshPause()">⏸ Pause</button>
+        <button class="export-btn" onclick="refreshPricesOnly()">🔄 Refresh Prices</button>
+        <button class="export-btn" onclick="refreshDashboard()">⟳ Full Refresh</button>
+      </div>
       <button class="export-btn" onclick="exportChart()">⬇ Export Chart</button>
       <button class="btn btn-secondary" onclick="goBack()">← Upload New</button>
     </div>
@@ -91,6 +104,8 @@ AAPL,15,175.00,2023-03-01,
   </div>
   <div id="dash-content" style="display:none">
     <div class="cards-grid" id="stat-cards"></div>
+
+    <!-- Portfolio History Chart -->
     <div class="chart-card">
       <div class="chart-header">
         <div class="chart-title">Portfolio Value Over Time</div>
@@ -103,6 +118,18 @@ AAPL,15,175.00,2023-03-01,
       </div>
       <div class="chart-wrap"><canvas id="portfolioChart" role="img" aria-label="Portfolio value over time line chart"></canvas></div>
     </div>
+
+    <!-- Portfolio Day Chart (collapsible) -->
+    <div class="chart-card collapsible-card">
+      <div class="chart-header collapsible-header" onclick="toggleDayChart()">
+        <div class="chart-title">Portfolio Today</div>
+        <button class="collapse-btn" id="day-chart-toggle">▲ Collapse</button>
+      </div>
+      <div id="day-chart-body" class="collapsible-body">
+        <div class="chart-wrap" style="height:240px;"><canvas id="portfolioDayChart" role="img" aria-label="Portfolio today chart"></canvas></div>
+      </div>
+    </div>
+
     <div class="two-col">
       <div class="chart-card">
         <div class="chart-title" style="margin-bottom:1rem">Allocation</div>
@@ -113,7 +140,12 @@ AAPL,15,175.00,2023-03-01,
         <div style="position:relative;width:100%;height:280px;"><canvas id="pnlChart" role="img" aria-label="P&L by stock bar chart"></canvas></div>
       </div>
     </div>
-    <div class="section-title">Holdings</div>
+
+    <!-- Holdings Section -->
+    <div class="section-header">
+      <div class="section-title">Holdings</div>
+      <button class="holdings-detail-btn" onclick="openHoldingsModal()">📋 Full Holdings View</button>
+    </div>
     <div class="holdings-grid" id="holdings-grid"></div>
   </div>
 </div>
@@ -121,18 +153,67 @@ AAPL,15,175.00,2023-03-01,
 <!-- DRILLDOWN SCREEN -->
 <div id="drilldown-screen">
   <button class="back-btn" onclick="showDashboard()">← Back to Dashboard</button>
-  <div class="dd-title" id="dd-ticker"></div>
+  <div class="dd-ticker-row">
+    <div class="dd-title" id="dd-ticker"></div>
+  </div>
   <div class="dd-subtitle" id="dd-subtitle"></div>
   <div class="cards-grid" id="dd-cards" style="margin-bottom:1.5rem"></div>
-  <div class="chart-card">
+
+  <!-- Stock History Chart -->
+  <div class="chart-card" style="margin-bottom:1rem">
     <div class="chart-title" style="margin-bottom:1rem">Price History</div>
     <div class="chart-wrap"><canvas id="ddChart" role="img" aria-label="Stock price history chart"></canvas></div>
+  </div>
+
+  <!-- Stock Day Chart -->
+  <div class="chart-card">
+    <div class="chart-title" style="margin-bottom:1rem">Today's Price</div>
+    <div style="position:relative;width:100%;height:240px;"><canvas id="ddDayChart" role="img" aria-label="Stock day chart"></canvas></div>
+  </div>
+</div>
+
+<!-- HOLDINGS MODAL -->
+<div id="holdings-modal" class="modal-overlay" onclick="if(event.target===this)closeHoldingsModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">📋 All Holdings</div>
+      <button class="modal-close" onclick="closeHoldingsModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-table-wrap">
+        <table class="modal-table">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Qty</th>
+              <th>Avg Buy</th>
+              <th>Live Price</th>
+              <th>Invested</th>
+              <th>Current Value</th>
+              <th>P&amp;L (₹)</th>
+              <th>P&amp;L (%)</th>
+              <th>Today</th>
+              <th>Allocation</th>
+            </tr>
+          </thead>
+          <tbody id="holdings-modal-tbody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
-<!-- Single ES module entry point — all JS lives in js/ -->
+<script>
+function toggleDayChart() {
+  const body = document.getElementById('day-chart-body');
+  const btn = document.getElementById('day-chart-toggle');
+  const isCollapsed = body.classList.toggle('collapsed');
+  btn.textContent = isCollapsed ? '▼ Expand' : '▲ Collapse';
+}
+</script>
+
 <script type="module" src="js/main.js"></script>
 
 </body>

@@ -118,3 +118,189 @@ tr:hover td { background: var(--bg3); }
 .export-btn { background: var(--bg4); border: 1px solid var(--border); color: var(--text2); padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.15s; }
 .export-btn:hover { color: var(--text); border-color: var(--border2); }
 .api-note { font-size: 11px; color: var(--text3); text-align: center; margin-top: 1rem; }
+
+/* ── REFRESH CONTROLS ── */
+.refresh-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 4px 8px;
+}
+.refresh-timestamp {
+  font-size: 11px;
+  color: var(--text3);
+  white-space: nowrap;
+  min-width: 80px;
+}
+.interval-sel {
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+.interval-sel:hover { border-color: var(--border2); }
+
+/* ── COLLAPSIBLE DAY CHART ── */
+.collapsible-card { overflow: hidden; }
+.collapsible-header { cursor: pointer; user-select: none; }
+.collapsible-header:hover .chart-title { color: var(--accent2); }
+.collapse-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.collapse-btn:hover { border-color: var(--border2); color: var(--text); }
+.collapsible-body {
+  max-height: 300px;
+  overflow: hidden;
+  transition: max-height 0.35s ease, opacity 0.25s ease;
+  opacity: 1;
+}
+.collapsible-body.collapsed {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* ── SECTION HEADER (holdings) ── */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.holdings-detail-btn {
+  background: var(--bg4);
+  border: 1px solid var(--border2);
+  color: var(--text2);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.holdings-detail-btn:hover {
+  color: var(--text);
+  border-color: var(--accent2);
+  background: rgba(99,102,241,0.08);
+}
+
+/* ── HOLDINGS MODAL ── */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  backdrop-filter: blur(4px);
+}
+.modal-box {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 18px;
+  width: 100%;
+  max-width: 1100px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+  animation: modalIn 0.2s ease;
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.96) translateY(12px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modal-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+.modal-close {
+  background: var(--bg4);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+.modal-close:hover { color: var(--text); border-color: var(--border2); }
+.modal-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+}
+.modal-table-wrap {
+  overflow-x: auto;
+}
+.modal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.modal-table th {
+  background: var(--bg3);
+  color: var(--text3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 10px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.modal-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  white-space: nowrap;
+}
+.modal-table tr:last-child td { border-bottom: none; }
+.modal-table tbody tr:hover td { background: var(--bg3); }
+
+/* ── DRILLDOWN ticker row ── */
+.dd-ticker-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 900px) {
+  .refresh-controls { flex-wrap: wrap; }
+  .header-actions { gap: 0.5rem; }
+  .modal-box { max-height: 95vh; border-radius: 14px; }
+}
+@media (max-width: 600px) {
+  .refresh-controls { display: none; }
+}

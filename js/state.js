@@ -8,6 +8,7 @@ export const state = {
   holdings: {},
   priceCache: {},
   historyCache: {},
+  dayHistoryCache: {},
   portfolioTimeSeries: [],
   fullTimeSeries: [],
   currentFilter: '1Y',
@@ -15,17 +16,35 @@ export const state = {
   pieChartInstance: null,
   pnlChartInstance: null,
   ddChartInstance: null,
+  ddDayChartInstance: null,
+  portfolioDayChartInstance: null,
   livePrices: {},
+  prevClosePrices: {},
   histories: {},
+  dayHistories: {},
   previewSort: {
     key: 'invested',
     asc: false,
   },
+  refreshIntervalId: null,
+  refreshIntervalMs: 60000,
+  refreshPaused: false,
 };
 
 export function resetCaches() {
   state.priceCache = {};
-  state.historyCache = {};
   state.livePrices = {};
+  state.prevClosePrices = {};
+  state.dayHistoryCache = {};
+  state.dayHistories = {};
+}
+
+export function resetAllCaches() {
+  state.priceCache = {};
+  state.historyCache = {};
+  state.dayHistoryCache = {};
+  state.livePrices = {};
+  state.prevClosePrices = {};
   state.fullTimeSeries = [];
+  state.dayHistories = {};
 }
