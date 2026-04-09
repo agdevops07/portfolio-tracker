@@ -37,7 +37,14 @@ export async function fetchHistory(ticker, upstoxTicker, range = '2y') {
     const data = await res.json();
 
     const series = {};
+
+    // ✅ Get today's date in YYYY-MM-DD
+    const today = new Date().toISOString().split('T')[0];
+
     data.forEach((d) => {
+      // ✅ Skip today's data
+      if (d.date === today) return;
+
       series[d.date] = d.price;
     });
 
