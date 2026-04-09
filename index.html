@@ -20,13 +20,9 @@
     <div class="drop-title">Drop your CSV here</div>
     <div class="drop-sub">Supports ticker, quantity, average_buy_price,<br>buy_date columns</div>
     <input type="file" id="file-input" accept=".csv">
-    <div style="display: flex; gap: 12px;">
-      <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
-        Browse File
-      </button>
-      <button class="btn btn-primary" onclick="loadMyPortfolio()">
-        Load Portfolio
-      </button>
+    <div style="display:flex;gap:12px;">
+      <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">Browse File</button>
+      <button class="btn btn-primary" onclick="loadMyPortfolio()">Load Portfolio</button>
     </div>
     <div class="or-divider">or</div>
     <button class="sample-btn" onclick="loadSampleData()">Load sample portfolio</button>
@@ -37,13 +33,10 @@
       <pre>ticker,quantity,average_buy_price,buy_date,upstox_ticker
 RELIANCE.NS,10,2400.50,2023-06-01,ABC
 TCS.NS,5,3800.00,2023-04-15,
-INFY.NS,20,1500.00,2023-01-10,
-HDFCBANK.NS,8,1650.00,2023-09-20,
-AAPL,15,175.00,2023-03-01,
-      </pre>
+INFY.NS,20,1500.00,2023-01-10,</pre>
     </details>
   </div>
-  <p class="api-note">Prices fetched via Yahoo Finance proxy and Upstox · Data cached in memory</p>
+  <p class="api-note">Prices fetched via Yahoo Finance · Data cached in memory</p>
 </div>
 
 <!-- PREVIEW SCREEN -->
@@ -80,17 +73,34 @@ AAPL,15,175.00,2023-03-01,
   <div class="dash-header">
     <div class="dash-logo">📈 Portfolio Tracker</div>
     <div class="header-actions">
-      <button class="export-btn" onclick="refreshDashboard()">🔄 Refresh</button>
+      <div class="refresh-controls">
+        <span id="last-refresh-time" class="refresh-timestamp"></span>
+        <select id="refresh-interval-sel" class="interval-sel" onchange="setRefreshInterval(+this.value)">
+          <option value="30000">30s</option>
+          <option value="60000" selected>1m</option>
+          <option value="120000">2m</option>
+          <option value="300000">5m</option>
+          <option value="600000">10m</option>
+        </select>
+        <button id="refresh-pause-btn" class="export-btn" onclick="toggleRefreshPause()">⏸ Pause</button>
+        <button class="export-btn" onclick="refreshPricesOnly()">🔄 Refresh Prices</button>
+        <button class="export-btn" onclick="refreshDashboard()">⟳ Full Refresh</button>
+      </div>
       <button class="export-btn" onclick="exportChart()">⬇ Export Chart</button>
       <button class="btn btn-secondary" onclick="goBack()">← Upload New</button>
     </div>
   </div>
+
   <div id="dash-loading" class="loading">
     <div class="spinner"></div>
     <div class="loading-text" id="loading-msg">Fetching live prices…</div>
   </div>
+
   <div id="dash-content" style="display:none">
+    <!-- Stat cards -->
     <div class="cards-grid" id="stat-cards"></div>
+
+    <!-- Portfolio History Chart -->
     <div class="chart-card">
       <div class="chart-header">
         <div class="chart-title">Portfolio Value Over Time</div>
@@ -101,19 +111,47 @@ AAPL,15,175.00,2023-03-01,
           <button class="tf-btn" onclick="setTimeFilter('ALL',this)">ALL</button>
         </div>
       </div>
-      <div class="chart-wrap"><canvas id="portfolioChart" role="img" aria-label="Portfolio value over time line chart"></canvas></div>
+      <div class="chart-wrap"><canvas id="portfolioChart"></canvas></div>
     </div>
+
+    <!-- Portfolio Day Chart (collapsible) -->
+    <div class="chart-card collapsible-card">
+      <div class="chart-header collapsible-header" onclick="toggleSection('day-chart-body','day-chart-toggle')">
+        <div class="chart-title">Portfolio Today [Under Developement..] <span class="chart-subtitle">(Intraday 5-min)</span></div>
+        <button class="collapse-btn" id="day-chart-toggle">▲ Collapse</button>
+      </div>
+      <div id="day-chart-body" class="collapsible-body">
+        <div id="portfolio-day-wrap" class="chart-wrap" style="height:240px;">
+          <canvas id="portfolioDayChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Allocation + Overall P&L -->
     <div class="two-col">
       <div class="chart-card">
         <div class="chart-title" style="margin-bottom:1rem">Allocation</div>
-        <div class="pie-wrap"><canvas id="pieChart" role="img" aria-label="Portfolio allocation pie chart"></canvas></div>
+        <div class="pie-wrap"><canvas id="pieChart"></canvas></div>
       </div>
       <div class="chart-card">
-        <div class="chart-title" style="margin-bottom:1rem">P&amp;L by Stock</div>
-        <div style="position:relative;width:100%;height:280px;"><canvas id="pnlChart" role="img" aria-label="P&L by stock bar chart"></canvas></div>
+        <div class="chart-title" style="margin-bottom:1rem">P&amp;L by Stock (Overall)</div>
+        <div style="position:relative;width:100%;height:280px;"><canvas id="pnlChart"></canvas></div>
       </div>
     </div>
-    <div class="section-title">Holdings</div>
+
+    <!-- Today's P&L bar chart -->
+    <div class="chart-card">
+      <div class="chart-title" style="margin-bottom:1rem">Today's P&amp;L by Stock <span class="chart-subtitle">(vs Prev Close)</span></div>
+      <div id="today-pnl-wrap" style="position:relative;width:100%;height:280px;">
+        <canvas id="todayPnlChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Holdings -->
+    <div class="section-header">
+      <div class="section-title">Holdings</div>
+      <button class="holdings-detail-btn" onclick="openHoldingsModal()">📋 Full Holdings View</button>
+    </div>
     <div class="holdings-grid" id="holdings-grid"></div>
   </div>
 </div>
@@ -124,16 +162,66 @@ AAPL,15,175.00,2023-03-01,
   <div class="dd-title" id="dd-ticker"></div>
   <div class="dd-subtitle" id="dd-subtitle"></div>
   <div class="cards-grid" id="dd-cards" style="margin-bottom:1.5rem"></div>
-  <div class="chart-card">
+
+  <!-- Stock History Chart -->
+  <div class="chart-card" style="margin-bottom:1rem">
     <div class="chart-title" style="margin-bottom:1rem">Price History</div>
-    <div class="chart-wrap"><canvas id="ddChart" role="img" aria-label="Stock price history chart"></canvas></div>
+    <div class="chart-wrap"><canvas id="ddChart"></canvas></div>
+  </div>
+
+  <!-- Stock Day Chart -->
+  <div class="chart-card">
+    <div class="chart-title" style="margin-bottom:1rem">Today's Price <span class="chart-subtitle">(Intraday 5-min)</span></div>
+    <div id="dd-day-wrap" style="position:relative;width:100%;height:260px;">
+      <canvas id="ddDayChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- HOLDINGS MODAL -->
+<div id="holdings-modal" class="modal-overlay" onclick="if(event.target===this)closeHoldingsModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title">📋 All Holdings</div>
+      <button class="modal-close" onclick="closeHoldingsModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-table-wrap">
+        <table class="modal-table">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Qty</th>
+              <th>Avg Buy</th>
+              <th>Live Price</th>
+              <th>Prev Close</th>
+              <th>Invested</th>
+              <th>Current Value</th>
+              <th>P&amp;L (₹)</th>
+              <th>P&amp;L (%)</th>
+              <th>Day Change</th>
+              <th>Day Change %</th>
+              <th>Allocation</th>
+            </tr>
+          </thead>
+          <tbody id="holdings-modal-tbody"></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
-<!-- Single ES module entry point — all JS lives in js/ -->
-<script type="module" src="js/main.js"></script>
+<script>
+function toggleSection(bodyId, btnId) {
+  const body = document.getElementById(bodyId);
+  const btn  = document.getElementById(btnId);
+  const collapsed = body.classList.toggle('collapsed');
+  btn.textContent = collapsed ? '▼ Expand' : '▲ Collapse';
+}
+</script>
 
+<script type="module" src="js/main.js"></script>
 </body>
 </html>
