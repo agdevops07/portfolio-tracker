@@ -5,20 +5,27 @@
 
 import { state } from './state.js';
 
+// ── Live price + previous close ──────────────────
 export async function fetchPrice(ticker) {
   if (state.priceCache[ticker]) return state.priceCache[ticker];
   try {
     const res = await fetch(`/api/price?ticker=${ticker}`);
     const data = await res.json();
-    state.priceCache[ticker] = data.price;
-    if (data.previousClose) state.prevClosePrices[ticker] = data.previousClose;
-    return data.price;
+    if (data.price) {
+      state.priceCache[ticker] = data.price;
+      // Store previousClose — used for today's change calculation
+      if (data.previousClose && data.previousClose > 0) {
+        state.prevClosePrices[ticker] = data.previousClose;
+      }
+    }
+    return data.price ?? null;
   } catch (e) {
     console.warn('fetchPrice failed:', ticker, e);
     return null;
   }
 }
 
+// ── Historical daily closes ──────────────────────
 export async function fetchHistory(ticker, upstoxTicker, range = '2y') {
   const key = `${ticker}_${upstoxTicker || ''}_${range}`;
   if (state.historyCache[key]) return state.historyCache[key];
@@ -32,7 +39,7 @@ export async function fetchHistory(ticker, upstoxTicker, range = '2y') {
     const today = new Date().toISOString().split('T')[0];
 
     data.forEach((d) => {
-      if (d.date === today) return;
+      if (d.date === today) return; // skip today — live price covers it
       series[d.date] = d.price;
     });
 
@@ -44,32 +51,32 @@ export async function fetchHistory(ticker, upstoxTicker, range = '2y') {
   }
 }
 
-// Fetch today's intraday / 1d data
-export async function fetchDayHistory(ticker, upstoxTicker) {
-  const key = `day_${ticker}_${upstoxTicker || ''}`;
+// ── Intraday (5-min) data for day charts ─────────
+// Uses dedicated /api/intraday endpoint which calls Yahoo with interval=5m&range=1d
+export async function fetchDayHistory(ticker) {
+  const key = `intraday_${ticker}`;
   if (state.dayHistoryCache[key]) return state.dayHistoryCache[key];
 
   try {
-    // Use 5d range and filter to today only — Yahoo Finance 1d interval
-    const url = `/api/history?ticker=${ticker}&upstox_ticker=${upstoxTicker || ''}&range=5d&interval=1d`;
-    const res = await fetch(url);
+    const res = await fetch(`/api/intraday?ticker=${ticker}`);
     const data = await res.json();
 
-    const today = new Date().toISOString().split('T')[0];
-    // Return full sorted array for day chart (use last few days if today not available)
-    const series = Array.isArray(data)
-      ? data.map(d => ({ time: d.date, price: d.price }))
-      : [];
+    const series = (data.series || []);
 
-    const sorted = series.sort((a, b) => a.time.localeCompare(b.time));
-    state.dayHistoryCache[key] = sorted;
-    return sorted;
+    // Also grab previousClose from intraday response as a fallback
+    if (data.previousClose && data.previousClose > 0 && !state.prevClosePrices[ticker]) {
+      state.prevClosePrices[ticker] = data.previousClose;
+    }
+
+    state.dayHistoryCache[key] = series;
+    return series;
   } catch (e) {
     console.warn('fetchDayHistory failed:', ticker, e);
     return [];
   }
 }
 
+// ── Portfolio CSV ────────────────────────────────
 export async function fetchPortfolioCSV() {
   const res = await fetch('/api/portfolio');
   if (!res.ok) throw new Error(`HTTP ${res.status}`);

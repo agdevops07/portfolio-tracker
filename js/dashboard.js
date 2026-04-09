@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════
 // DASHBOARD
 // Data loading, stat cards, holdings grid,
-// auto-refresh, today's change, day chart.
+// auto-refresh, today's change, day charts.
 // ═══════════════════════════════════════════════
 
 import { state, resetCaches, resetAllCaches } from './state.js';
@@ -13,26 +13,27 @@ import {
   renderPieChart,
   renderPnlChart,
   renderPortfolioDayChart,
+  renderTodayPnlChart,
   destroyAllCharts,
   COLORS,
 } from './charts.js';
 
-// ── Load (fetch + build) ─────────────────────────
+// ── Full load (history + prices + intraday) ──────
 export async function loadDashboard() {
   showScreen('dashboard-screen');
 
   const loadingDiv = document.getElementById('dash-loading');
   const contentDiv = document.getElementById('dash-content');
-  const loadMsg = document.getElementById('loading-msg');
+  const loadMsg   = document.getElementById('loading-msg');
 
   loadingDiv.style.display = 'flex';
-  contentDiv.style.display = 'none';
+  contentDiv.style.display  = 'none';
 
   const tickers = Object.keys(state.holdings);
-  loadMsg.textContent = `Fetching Historic Data for ${tickers.length} stocks…`;
+  loadMsg.textContent = `Fetching historic data for ${tickers.length} stocks…`;
 
   try {
-    // 1. Histories (parallel)
+    // 1. Historical daily data (parallel)
     const historyResults = await Promise.all(
       tickers.map(async (ticker) => {
         const h = state.holdings[ticker];
@@ -40,12 +41,11 @@ export async function loadDashboard() {
         return { ticker, data: hist ? forwardFill(hist) : null };
       })
     );
-
     const histories = {};
     historyResults.forEach(({ ticker, data }) => { if (data) histories[ticker] = data; });
 
-    // 2. Live prices + prev close (parallel)
-    loadMsg.textContent = 'Fetching latest prices…';
+    // 2. Live prices + prevClose (parallel) — must run BEFORE intraday so prevClose is set
+    loadMsg.textContent = 'Fetching live prices…';
     const priceResults = await Promise.all(
       tickers.map(async (ticker) => {
         let price = await fetchPrice(ticker);
@@ -58,61 +58,59 @@ export async function loadDashboard() {
     );
     priceResults.forEach(({ ticker, price }) => { state.livePrices[ticker] = price; });
 
-    // 3. Day histories for portfolio day chart
+    // 3. Intraday 5-min data (parallel) — also backfills prevClose if price API missed it
     loadMsg.textContent = 'Fetching intraday data…';
     const dayResults = await Promise.all(
       tickers.map(async (ticker) => {
         const h = state.holdings[ticker];
-        const dayData = await fetchDayHistory(h.ticker, h.upstoxTicker);
+        const dayData = await fetchDayHistory(h.ticker);
         return { ticker, dayData };
       })
     );
     dayResults.forEach(({ ticker, dayData }) => { state.dayHistories[ticker] = dayData; });
 
-    // 4. Time series
-    loadMsg.textContent = 'Building portfolio chart…';
+    // 4. Portfolio time series
+    loadMsg.textContent = 'Building charts…';
     state.fullTimeSeries = await buildTimeSeries(histories);
-    state.histories = histories;
+    state.histories      = histories;
 
     loadingDiv.style.display = 'none';
-    contentDiv.style.display = 'block';
+    contentDiv.style.display  = 'block';
     renderDashboard();
     startAutoRefresh();
 
   } catch (err) {
     console.error(err);
-    loadingDiv.innerHTML = `<div class="error-box">Failed to load portfolio data</div>`;
+    loadingDiv.innerHTML = `<div class="error-box">Failed to load portfolio data: ${err.message}</div>`;
   }
 }
 
-// ── Refresh prices only (not history) ────────────
+// ── Refresh prices + intraday only ──────────────
 export async function refreshPricesOnly() {
-  showToast('Refreshing prices...');
-  resetCaches();
+  showToast('Refreshing prices…');
+  resetCaches(); // clears priceCache, prevClosePrices, dayHistoryCache
 
   const tickers = Object.keys(state.holdings);
-  const priceResults = await Promise.all(
+
+  // Prices first
+  await Promise.all(
     tickers.map(async (ticker) => {
       let price = await fetchPrice(ticker);
       if (!price && state.histories[ticker]) {
         const dates = Object.keys(state.histories[ticker]).sort();
         price = state.histories[ticker][dates[dates.length - 1]];
       }
-      return { ticker, price };
+      state.livePrices[ticker] = price;
     })
   );
-  priceResults.forEach(({ ticker, price }) => { state.livePrices[ticker] = price; });
 
-  // Refresh day histories too
-  const tickers2 = Object.keys(state.holdings);
-  const dayResults = await Promise.all(
-    tickers2.map(async (ticker) => {
+  // Then intraday (also backfills prevClose)
+  await Promise.all(
+    tickers.map(async (ticker) => {
       const h = state.holdings[ticker];
-      const dayData = await fetchDayHistory(h.ticker, h.upstoxTicker);
-      return { ticker, dayData };
+      state.dayHistories[ticker] = await fetchDayHistory(h.ticker);
     })
   );
-  dayResults.forEach(({ ticker, dayData }) => { state.dayHistories[ticker] = dayData; });
 
   renderDashboard();
   updateRefreshTimestamp();
@@ -121,13 +119,13 @@ export async function refreshPricesOnly() {
 
 export async function refreshDashboard() {
   stopAutoRefresh();
-  showToast('Full refresh...');
+  showToast('Full refresh…');
   resetAllCaches();
   destroyAllCharts();
   await loadDashboard();
 }
 
-// ── Auto-refresh controls ────────────────────────
+// ── Auto-refresh ─────────────────────────────────
 export function startAutoRefresh() {
   stopAutoRefresh();
   if (!state.refreshPaused) {
@@ -147,11 +145,7 @@ export function stopAutoRefresh() {
 
 export function toggleRefreshPause() {
   state.refreshPaused = !state.refreshPaused;
-  if (state.refreshPaused) {
-    stopAutoRefresh();
-  } else {
-    startAutoRefresh();
-  }
+  state.refreshPaused ? stopAutoRefresh() : startAutoRefresh();
   updateRefreshUI();
   showToast(state.refreshPaused ? 'Auto-refresh paused' : 'Auto-refresh resumed');
 }
@@ -164,7 +158,7 @@ export function setRefreshInterval(ms) {
 }
 
 function updateRefreshUI() {
-  const pauseBtn = document.getElementById('refresh-pause-btn');
+  const pauseBtn   = document.getElementById('refresh-pause-btn');
   const intervalSel = document.getElementById('refresh-interval-sel');
   if (pauseBtn) {
     pauseBtn.textContent = state.refreshPaused ? '▶ Resume' : '⏸ Pause';
@@ -175,53 +169,50 @@ function updateRefreshUI() {
 
 function updateRefreshTimestamp() {
   const el = document.getElementById('last-refresh-time');
-  if (el) {
-    const now = new Date();
-    el.textContent = `Updated ${now.toLocaleTimeString()}`;
-  }
+  if (el) el.textContent = `Updated ${new Date().toLocaleTimeString()}`;
 }
 
-// ── Render ───────────────────────────────────────
+// ── Render all dashboard sections ────────────────
 export function renderDashboard() {
   const holdings = Object.values(state.holdings);
 
-  let totalInvested = 0;
-  let totalCurrent = 0;
-  let totalPrevClose = 0;
+  let totalInvested = 0, totalCurrent = 0, totalPrevClose = 0;
   holdings.forEach((h) => {
     const lp = state.livePrices[h.ticker];
     const pc = state.prevClosePrices[h.ticker];
-    totalInvested += h.invested;
-    if (lp) totalCurrent += lp * h.totalQty;
+    totalInvested  += h.invested;
+    if (lp) totalCurrent   += lp * h.totalQty;
     if (pc) totalPrevClose += pc * h.totalQty;
-    else if (lp) totalPrevClose += lp * h.totalQty; // fallback
   });
 
-  const totalPnl = totalCurrent - totalInvested;
-  const totalPnlPct = totalInvested ? (totalPnl / totalInvested) * 100 : 0;
-  const todayChange = totalPrevClose ? totalCurrent - totalPrevClose : null;
-  const todayChangePct = totalPrevClose ? (todayChange / totalPrevClose) * 100 : null;
+  const totalPnl        = totalCurrent - totalInvested;
+  const totalPnlPct     = totalInvested ? (totalPnl / totalInvested) * 100 : 0;
+  const todayChange     = totalPrevClose > 0 ? totalCurrent - totalPrevClose : null;
+  const todayChangePct  = totalPrevClose > 0 ? (todayChange / totalPrevClose) * 100 : null;
 
-  let best = null;
-  let worst = null;
+  let best = null, worst = null;
   holdings.forEach((h) => {
     const lp = state.livePrices[h.ticker];
     if (!lp) return;
     const p = ((lp - h.avgBuy) / h.avgBuy) * 100;
-    if (!best || p > best.pct) best = { ticker: h.ticker, pct: p };
+    if (!best  || p > best.pct)  best  = { ticker: h.ticker, pct: p };
     if (!worst || p < worst.pct) worst = { ticker: h.ticker, pct: p };
   });
 
   renderStatCards({ totalInvested, totalCurrent, totalPnl, totalPnlPct, todayChange, todayChangePct, best, holdings });
   renderPortfolioChart(state.currentFilter);
   renderPortfolioDayChart();
+  renderTodayPnlChart(holdings);
   renderPieChart(holdings, totalCurrent);
   renderPnlChart(holdings);
   renderHoldingCards(holdings, totalCurrent);
   updateRefreshTimestamp();
 }
 
-function renderStatCards({ totalInvested, totalCurrent, totalPnl, totalPnlPct, todayChange, todayChangePct, best, holdings }) {
+// ── Stat cards ───────────────────────────────────
+function renderStatCards({ totalInvested, totalCurrent, totalPnl, totalPnlPct,
+                            todayChange, todayChangePct, best, holdings }) {
+  const hasPrevClose = todayChange !== null;
   document.getElementById('stat-cards').innerHTML = `
     <div class="stat-card">
       <div class="stat-label">Total Invested</div>
@@ -248,11 +239,11 @@ function renderStatCards({ totalInvested, totalCurrent, totalPnl, totalPnlPct, t
     </div>
     <div class="stat-card">
       <div class="stat-label">Today's Change</div>
-      <div class="stat-value" style="color:${todayChange != null ? colorPnl(todayChange) : 'var(--text2)'}">
-        ${todayChange != null ? (todayChange >= 0 ? '+' : '') + fmt(Math.abs(todayChange)) : '—'}
+      <div class="stat-value" style="color:${hasPrevClose ? colorPnl(todayChange) : 'var(--text2)'}">
+        ${hasPrevClose ? (todayChange >= 0 ? '+' : '') + fmt(Math.abs(todayChange)) : '—'}
       </div>
-      <div class="stat-sub" style="color:${todayChangePct != null ? colorPnl(todayChangePct) : 'var(--text2)'}">
-        ${todayChangePct != null ? pct(todayChangePct) + ' today' : 'prev close unavailable'}
+      <div class="stat-sub" style="color:${hasPrevClose ? colorPnl(todayChangePct) : 'var(--text2)'}">
+        ${hasPrevClose ? pct(todayChangePct) + ' today' : 'Prev close unavailable'}
       </div>
     </div>
     ${best ? `
@@ -263,28 +254,27 @@ function renderStatCards({ totalInvested, totalCurrent, totalPnl, totalPnlPct, t
     </div>` : ''}`;
 }
 
+// ── Holding cards ────────────────────────────────
 function renderHoldingCards(holdings, totalCurrent) {
   const grid = document.getElementById('holdings-grid');
   grid.innerHTML = '';
 
   holdings.forEach((h, i) => {
-    const lp = state.livePrices[h.ticker];
-    const pc = state.prevClosePrices[h.ticker];
-    const currentVal = lp ? lp * h.totalQty : null;
-    const pnlVal = currentVal ? currentVal - h.invested : null;
-    const pnlPct = pnlVal ? (pnlVal / h.invested) * 100 : null;
-    const allocPct = totalCurrent && currentVal ? (currentVal / totalCurrent) * 100 : null;
-    const color = COLORS[i % COLORS.length];
+    const lp  = state.livePrices[h.ticker];
+    const pc  = state.prevClosePrices[h.ticker];
+    const currentVal  = lp ? lp * h.totalQty : null;
+    const pnlVal      = currentVal != null ? currentVal - h.invested : null;
+    const pnlPct      = pnlVal != null ? (pnlVal / h.invested) * 100 : null;
+    const allocPct    = totalCurrent && currentVal ? (currentVal / totalCurrent) * 100 : null;
+    const color       = COLORS[i % COLORS.length];
 
-    // Today's change per stock
-    const todayChg = (lp && pc) ? (lp - pc) * h.totalQty : null;
-    const todayChgPct = (lp && pc) ? ((lp - pc) / pc) * 100 : null;
+    // Today's change
+    const todayChgPct = (lp && pc && pc > 0) ? ((lp - pc) / pc) * 100 : null;
+    const todayChgAbs = (lp && pc && pc > 0) ? (lp - pc) * h.totalQty : null;
 
     const card = document.createElement('div');
     card.className = 'holding-card';
-    card.onclick = () => {
-      import('./drilldown.js').then((m) => m.openDrilldown(h.ticker));
-    };
+    card.onclick = () => import('./drilldown.js').then((m) => m.openDrilldown(h.ticker));
     card.innerHTML = `
       <div class="hc-top">
         <div>
@@ -307,11 +297,19 @@ function renderHoldingCards(holdings, totalCurrent) {
         <div><div class="hc-meta-label">Invested</div><div class="hc-meta-val">${fmt(h.invested)}</div></div>
         <div><div class="hc-meta-label">Current</div><div class="hc-meta-val">${currentVal ? fmt(currentVal) : '—'}</div></div>
         <div><div class="hc-meta-label">Live Price</div><div class="hc-meta-val">${lp ? lp.toFixed(2) : '—'}</div></div>
-        <div><div class="hc-meta-label">Today</div><div class="hc-meta-val" style="color:${todayChgPct != null ? colorPnl(todayChgPct) : 'var(--text2)'}">
-          ${todayChgPct != null ? pct(todayChgPct) : '—'}
-        </div></div>
+        <div>
+          <div class="hc-meta-label">Today</div>
+          <div class="hc-meta-val" style="color:${todayChgPct != null ? colorPnl(todayChgPct) : 'var(--text2)'}">
+            ${todayChgPct != null ? pct(todayChgPct) : '—'}
+          </div>
+        </div>
+        <div>
+          <div class="hc-meta-label">Day P&amp;L</div>
+          <div class="hc-meta-val" style="color:${todayChgAbs != null ? colorPnl(todayChgAbs) : 'var(--text2)'}">
+            ${todayChgAbs != null ? (todayChgAbs >= 0 ? '+' : '') + fmt(Math.abs(todayChgAbs)) : '—'}
+          </div>
+        </div>
       </div>`;
-
     grid.appendChild(card);
   });
 }

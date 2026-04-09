@@ -1,8 +1,3 @@
-// ═══════════════════════════════════════════════
-// STATE
-// Central store — import and mutate directly.
-// ═══════════════════════════════════════════════
-
 export const state = {
   rawRows: [],
   holdings: {},
@@ -15,6 +10,7 @@ export const state = {
   portfolioChartInstance: null,
   pieChartInstance: null,
   pnlChartInstance: null,
+  todayPnlChartInstance: null,
   ddChartInstance: null,
   ddDayChartInstance: null,
   portfolioDayChartInstance: null,
@@ -22,29 +18,27 @@ export const state = {
   prevClosePrices: {},
   histories: {},
   dayHistories: {},
-  previewSort: {
-    key: 'invested',
-    asc: false,
-  },
+  previewSort: { key: 'invested', asc: false },
   refreshIntervalId: null,
   refreshIntervalMs: 60000,
   refreshPaused: false,
 };
 
 export function resetCaches() {
-  state.priceCache = {};
-  state.livePrices = {};
+  // Only prices + intraday — history stays intact
+  state.priceCache      = {};
+  state.livePrices      = {};
   state.prevClosePrices = {};
   state.dayHistoryCache = {};
-  state.dayHistories = {};
+  state.dayHistories    = {};
 }
 
 export function resetAllCaches() {
-  state.priceCache = {};
-  state.historyCache = {};
+  state.priceCache      = {};
+  state.historyCache    = {};
   state.dayHistoryCache = {};
-  state.livePrices = {};
+  state.livePrices      = {};
   state.prevClosePrices = {};
-  state.fullTimeSeries = [];
-  state.dayHistories = {};
+  state.fullTimeSeries  = [];
+  state.dayHistories    = {};
 }

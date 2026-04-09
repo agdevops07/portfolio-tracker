@@ -1,83 +1,79 @@
 // ═══════════════════════════════════════════════
-// MAIN
-// Bootstrap: wire everything up on DOMContentLoaded.
+// MAIN — Bootstrap + holdings modal logic
 // ═══════════════════════════════════════════════
 
 import { initFileHandlers, loadSampleData, loadMyPortfolio } from './fileHandler.js';
-import { sortPreview, showPreview } from './preview.js';
+import { sortPreview } from './preview.js';
 import { loadDashboard, refreshDashboard, refreshPricesOnly, toggleRefreshPause, setRefreshInterval } from './dashboard.js';
 import { setTimeFilter } from './charts.js';
 import { goBack, showDashboard } from './utils.js';
 import { exportChart } from './export.js';
 import { openDrilldown } from './drilldown.js';
-
-document.addEventListener('DOMContentLoaded', () => {
-  initFileHandlers();
-
-  window.loadSampleData = loadSampleData;
-  window.loadMyPortfolio = loadMyPortfolio;
-  window.loadDashboard = loadDashboard;
-  window.refreshDashboard = refreshDashboard;
-  window.refreshPricesOnly = refreshPricesOnly;
-  window.toggleRefreshPause = toggleRefreshPause;
-  window.setRefreshInterval = setRefreshInterval;
-  window.goBack = goBack;
-  window.showDashboard = showDashboard;
-  window.sortPreview = sortPreview;
-  window.setTimeFilter = setTimeFilter;
-  window.exportChart = exportChart;
-  window.openDrilldown = openDrilldown;
-
-  // Holdings modal
-  window.openHoldingsModal = openHoldingsModal;
-  window.closeHoldingsModal = closeHoldingsModal;
-});
-
-// ── Holdings Full-Screen Modal ───────────────────
 import { state } from './state.js';
 import { fmt, pct, colorPnl } from './utils.js';
 import { COLORS } from './charts.js';
 
+document.addEventListener('DOMContentLoaded', () => {
+  initFileHandlers();
+
+  window.loadSampleData      = loadSampleData;
+  window.loadMyPortfolio     = loadMyPortfolio;
+  window.loadDashboard       = loadDashboard;
+  window.refreshDashboard    = refreshDashboard;
+  window.refreshPricesOnly   = refreshPricesOnly;
+  window.toggleRefreshPause  = toggleRefreshPause;
+  window.setRefreshInterval  = setRefreshInterval;
+  window.goBack              = goBack;
+  window.showDashboard       = showDashboard;
+  window.sortPreview         = sortPreview;
+  window.setTimeFilter       = setTimeFilter;
+  window.exportChart         = exportChart;
+  window.openDrilldown       = openDrilldown;
+  window.openHoldingsModal   = openHoldingsModal;
+  window.closeHoldingsModal  = closeHoldingsModal;
+});
+
+// ── Holdings Full-Screen Modal ───────────────────
 export function openHoldingsModal() {
-  const modal = document.getElementById('holdings-modal');
-  modal.style.display = 'flex';
+  document.getElementById('holdings-modal').style.display = 'flex';
   renderHoldingsTable();
 }
 
 export function closeHoldingsModal() {
-  const modal = document.getElementById('holdings-modal');
-  modal.style.display = 'none';
+  document.getElementById('holdings-modal').style.display = 'none';
 }
 
 function renderHoldingsTable() {
   const holdings = Object.values(state.holdings);
-  let totalInvested = 0;
+
   let totalCurrent = 0;
   holdings.forEach((h) => {
     const lp = state.livePrices[h.ticker];
-    totalInvested += h.invested;
     if (lp) totalCurrent += lp * h.totalQty;
   });
 
-  const tbody = document.getElementById('holdings-modal-tbody');
-  tbody.innerHTML = '';
-
-  // Sort by allocation desc
+  // Sort by current value desc
   const sorted = [...holdings].sort((a, b) => {
     const va = (state.livePrices[a.ticker] || 0) * a.totalQty;
     const vb = (state.livePrices[b.ticker] || 0) * b.totalQty;
     return vb - va;
   });
 
+  const tbody = document.getElementById('holdings-modal-tbody');
+  tbody.innerHTML = '';
+
   sorted.forEach((h, i) => {
-    const lp = state.livePrices[h.ticker];
-    const pc = state.prevClosePrices[h.ticker];
-    const currentVal = lp ? lp * h.totalQty : null;
-    const pnlVal = currentVal ? currentVal - h.invested : null;
-    const pnlPct = pnlVal != null ? (pnlVal / h.invested) * 100 : null;
-    const allocPct = totalCurrent && currentVal ? (currentVal / totalCurrent) * 100 : null;
-    const todayChgPct = (lp && pc) ? ((lp - pc) / pc) * 100 : null;
-    const color = COLORS[i % COLORS.length];
+    const lp  = state.livePrices[h.ticker];
+    const pc  = state.prevClosePrices[h.ticker];
+    const currentVal  = lp ? lp * h.totalQty : null;
+    const pnlVal      = currentVal != null ? currentVal - h.invested : null;
+    const pnlPct      = pnlVal != null ? (pnlVal / h.invested) * 100 : null;
+    const allocPct    = totalCurrent && currentVal ? (currentVal / totalCurrent) * 100 : null;
+    const color       = COLORS[i % COLORS.length];
+
+    // Today's change
+    const dayChgAbs   = (lp && pc && pc > 0) ? (lp - pc) * h.totalQty : null;
+    const dayChgPct   = (lp && pc && pc > 0) ? ((lp - pc) / pc) * 100 : null;
 
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -90,6 +86,7 @@ function renderHoldingsTable() {
       <td>${h.totalQty}</td>
       <td>${h.avgBuy.toFixed(2)}</td>
       <td>${lp ? lp.toFixed(2) : '—'}</td>
+      <td style="color:var(--text2)">${pc ? pc.toFixed(2) : '—'}</td>
       <td>${fmt(h.invested)}</td>
       <td>${currentVal ? fmt(currentVal) : '—'}</td>
       <td style="color:${pnlVal != null ? colorPnl(pnlVal) : 'var(--text2)'}">
@@ -98,16 +95,20 @@ function renderHoldingsTable() {
       <td style="color:${pnlPct != null ? colorPnl(pnlPct) : 'var(--text2)'}">
         ${pnlPct != null ? pct(pnlPct) : '—'}
       </td>
-      <td style="color:${todayChgPct != null ? colorPnl(todayChgPct) : 'var(--text2)'}">
-        ${todayChgPct != null ? pct(todayChgPct) : '—'}
+      <td style="color:${dayChgAbs != null ? colorPnl(dayChgAbs) : 'var(--text2)'}">
+        ${dayChgAbs != null ? (dayChgAbs >= 0 ? '+' : '') + fmt(Math.abs(dayChgAbs)) : '—'}
+      </td>
+      <td style="color:${dayChgPct != null ? colorPnl(dayChgPct) : 'var(--text2)'}">
+        ${dayChgPct != null ? pct(dayChgPct) : '—'}
       </td>
       <td>${allocPct != null ? allocPct.toFixed(1) + '%' : '—'}</td>
     `;
+    tr.style.cursor = 'pointer';
+    tr.title = 'Click to view stock detail';
     tr.onclick = () => {
       closeHoldingsModal();
       import('./drilldown.js').then((m) => m.openDrilldown(h.ticker));
     };
-    tr.style.cursor = 'pointer';
     tbody.appendChild(tr);
   });
 }
